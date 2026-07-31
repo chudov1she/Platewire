@@ -1,0 +1,567 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  GUEST
+  USER
+  ADMIN
+}
+
+model User {
+  id                String     @id @default(uuid())
+  status            UserStatus @default(GUEST)
+  telegramId        String?    @unique
+  telegramUsername  String?
+  telegramFirstName String?
+  telegramLastName  String?
+  telegramPhotoUrl  String?
+  login             String?    @unique
+  passwordHash      String?
+  displayName       String?
+  avatarUrl         String?
+  createdByAdminId  String?
+  createdByAdmin    User?      @relation("UserCreatedBy", fields: [createdByAdminId], references: [id])
+  createdUsers      User[]     @relation("UserCreatedBy")
+  chatMessages      AgentChatMessage[]
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+}
+
+model Team {
+  id           String   @id @default(uuid())
+  mlbTeamId    Int      @unique
+  name         String
+  abbreviation String
+  teamName     String?
+  locationName String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  homeGames    Game[]   @relation("HomeTeam")
+  awayGames    Game[]   @relation("AwayTeam")
+}
+
+model Venue {
+  id                  String               @id @default(uuid())
+  mlbVenueId          Int                  @unique
+  name                String
+  city                String?
+  state               String?
+  country             String?
+  latitude            Float?
+  longitude           Float?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  games               Game[]
+  weatherObservations WeatherObservation[]
+}
+
+model Game {
+  id               String    @id @default(uuid())
+  mlbGamePk        Int       @unique
+  season           Int?
+  gameDateUtc      DateTime
+  officialDate     DateTime  @db.Date
+  status           String
+  statusDetail     String?
+  homeScore        Int?
+  awayScore        Int?
+  inning           Int?
+  inningHalf       String?
+  inningState      String?
+  balls            Int?
+  strikes          Int?
+  outs             Int?
+  dayNight         String?
+  scheduledInnings Int?
+  weatherCondition String?
+  weatherTemp      String?
+  weatherWind      String?
+  /** MLB probable starting pitchers (statsapi probablePitcher / feed). */
+  homeProbableMlbId Int?
+  awayProbableMlbId Int?
+  winlineEventId   Int?
+  winlineFlipped   Boolean?
+  fetchedAt        DateTime?
+  sourceUpdatedAt  DateTime?
+  homeTeamId       String
+  awayTeamId       String
+  venueId          String?
+  homeTeam         Team      @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam         Team      @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  venue            Venue?    @relation(fields: [venueId], references: [id])
+  weatherObservations WeatherObservation[]
+  savantPreview    SavantPreviewSnapshot?
+  savantGamefeed   SavantGamefeedSnapshot?
+  lineupPlayers    GameLineupPlayer[]
+  statcastPitches  StatcastPitch[]
+  f5OddsSnapshots  F5OddsSnapshot[]
+  gameOfficials    GameOfficial[]
+  pipelineEvents   PipelineEvent[]
+  ledgerEntries    F5LedgerEntry[]
+  telegramNotifyState TelegramNotifyState?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([officialDate])
+  @@index([status, gameDateUtc])
+  @@index([winlineEventId])
+}
+
+model Official {
+  id                String           @id @default(uuid())
+  mlbOfficialId     Int              @unique
+  fullName          String?
+  /// Matched UmpScorecards display name (after name resolution).
+  umpScorecardName  String?
+  bioJson           Json?
+  bioFetchedAt      DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  assignments       GameOfficial[]
+  features          OfficialFeature?
+
+  @@index([umpScorecardName])
+}
+
+model GameOfficial {
+  id         String   @id @default(uuid())
+  gameId     String
+  game       Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  officialId String
+  official   Official @relation(fields: [officialId], references: [id], onDelete: Cascade)
+  role       String
+  fetchedAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([gameId, role])
+  @@index([officialId])
+  @@index([role])
+}
+
+model OfficialFeature {
+  id               String    @id @default(uuid())
+  officialId       String    @unique
+  official         Official  @relation(fields: [officialId], references: [id], onDelete: Cascade)
+  mlbOfficialId    Int
+  ready            Boolean   @default(false)
+  gamesSample      Int       @default(0)
+  asOf             DateTime? @db.Date
+  source           String    @default("statcast_ump")
+  kRate            Float?
+  bbRate           Float?
+  calledStrikeRate Float?
+  calledBallRate   Float?
+  metricsJson      Json?
+  fetchedAt        DateTime
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([mlbOfficialId])
+  @@index([ready])
+}
+
+/// Season/career rollup from umpscorecards.com (zone accuracy / consistency / favor).
+model UmpScorecardProfile {
+  id                   String   @id @default(uuid())
+  umpireName           String   @unique
+  nameKey              String   @unique
+  gamesSample          Int      @default(0)
+  overallAccuracy      Float?
+  accuracyAboveX       Float?
+  consistency          Float?
+  favorAbsMean         Float?
+  totalRunImpactMean   Float?
+  weightedScore        Float?
+  calledPitches        Int?
+  calledCorrect        Int?
+  calledWrong          Int?
+  metricsJson          Json?
+  fetchedAt            DateTime
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([fetchedAt])
+}
+
+model Player {
+  id               String             @id @default(uuid())
+  mlbPlayerId      Int                @unique
+  fullName         String?
+  batSide          String?
+  pitchHand        String?
+  primaryPosition  String?
+  birthDate        String?
+  bioJson          Json?
+  bioFetchedAt     DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  lineupSlots      GameLineupPlayer[]
+  features         PlayerFeature[]
+  pitchesAsBatter  StatcastPitch[]    @relation("BatterPitches")
+  pitchesAsPitcher StatcastPitch[]    @relation("PitcherPitches")
+}
+
+model PlayerFeature {
+  id                 String    @id @default(uuid())
+  playerId           String
+  player             Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  mlbPlayerId        Int
+  role               String
+  season             Int
+  ready              Boolean   @default(false)
+  gamesSample        Int       @default(0)
+  asOf               DateTime? @db.Date
+  source             String
+  seasonOps          Float?
+  seasonAvg          Float?
+  seasonObp          Float?
+  seasonSlg          Float?
+  seasonEra          Float?
+  seasonWhip         Float?
+  seasonIp           Float?
+  seasonGames        Int?
+  seasonGamesStarted Int?
+  l5Ops              Float?
+  l5Avg              Float?
+  l5Era              Float?
+  l5Whip             Float?
+  l5Ip               Float?
+  l5Games            Int       @default(0)
+  l10Ops             Float?
+  l10Avg             Float?
+  l10Era             Float?
+  l10Whip            Float?
+  l10Ip              Float?
+  l10Games           Int       @default(0)
+  metricsJson        Json?
+  fetchedAt          DateTime
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([playerId, role, season])
+  @@index([mlbPlayerId, role])
+  @@index([ready])
+  @@index([fetchedAt])
+}
+
+model StatcastPitch {
+  id              String   @id @default(uuid())
+  gameId          String
+  game            Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  mlbGamePk       Int
+  atBatNumber     Int
+  pitchNumber     Int
+  batterId        String?
+  batter          Player?  @relation("BatterPitches", fields: [batterId], references: [id])
+  pitcherId       String?
+  pitcher         Player?  @relation("PitcherPitches", fields: [pitcherId], references: [id])
+  sourceBatterId  Int?
+  sourcePitcherId Int?
+  pitchType       String?
+  pitchName       String?
+  gameDate        String?
+  events          String?
+  description     String?
+  inning          Int?
+  inningHalf      String?
+  balls           Int?
+  strikes         Int?
+  outs            Int?
+  homeTeam        String?
+  awayTeam        String?
+  releaseSpeed    Float?
+  releasePosX     Float?
+  releasePosZ     Float?
+  pfxX            Float?
+  pfxZ            Float?
+  plateX          Float?
+  plateZ          Float?
+  launchSpeed     Float?
+  launchAngle     Float?
+  hitDistanceSc   Float?
+  estimatedBa     Float?
+  estimatedWoba   Float?
+  estimatedSlg    Float?
+  wobaValue       Float?
+  babipValue      Float?
+  isoValue        Float?
+  deltaHomeWinExp Float?
+  deltaRunExp     Float?
+  batSpeed        Float?
+  swingLength     Float?
+  armAngle        Float?
+  attackAngle     Float?
+  rawRowJson      Json
+  fetchedAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([gameId, atBatNumber, pitchNumber])
+  @@index([mlbGamePk])
+  @@index([gameId, inning])
+}
+
+model SavantPreviewSnapshot {
+  id          String   @id @default(uuid())
+  gameId      String   @unique
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  mlbGamePk   Int
+  gameDate    String?
+  hasLineup   Boolean  @default(false)
+  hasProbable Boolean  @default(false)
+  previewJson Json
+  summaryJson Json?
+  fetchedAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([mlbGamePk])
+  @@index([hasLineup])
+}
+
+model SavantGamefeedSnapshot {
+  id                String   @id @default(uuid())
+  gameId            String   @unique
+  game              Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  mlbGamePk         Int
+  gameStatusCode    String?
+  gameStatus        String?
+  cacheKey          String?
+  cacheHit          String?
+  scoreboardJson    Json?
+  statsJson         Json?
+  currentPlayJson   Json?
+  topPerformersJson Json?
+  rawJson           Json?
+  fetchedAt         DateTime
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([mlbGamePk])
+  @@index([gameStatusCode])
+}
+
+model GameLineupPlayer {
+  id           String  @id @default(uuid())
+  gameId       String
+  game         Game    @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  side         String
+  battingOrder Int
+  playerId     String?
+  player       Player? @relation(fields: [playerId], references: [id])
+  mlbPlayerId  Int?
+  fullName     String?
+  xwoba        Float?
+  xslg         Float?
+  xba          Float?
+  barrelRate   Float?
+  hardHitPct   Float?
+
+  @@unique([gameId, side, battingOrder])
+  @@index([gameId, side])
+  @@index([mlbPlayerId])
+}
+
+model WeatherObservation {
+  id                   String   @id @default(uuid())
+  gameId               String
+  game                 Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  venueId              String?
+  venue                Venue?   @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  source               String   @default("open_meteo")
+  observedAt           DateTime
+  relativeToGame       String?
+  temperatureF         Float?
+  apparentTemperatureF Float?
+  humidity             Float?
+  dewPointF            Float?
+  pressureHpa          Float?
+  precipitationIn      Float?
+  cloudCover           Float?
+  windSpeedMph         Float?
+  windGustsMph         Float?
+  windDirectionDeg     Float?
+  weatherCode          Int?
+  conditionText        String?
+  capturedAt           DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([gameId, source, observedAt])
+  @@index([gameId, observedAt])
+}
+
+model F5OddsSnapshot {
+  id               String   @id @default(uuid())
+  gameId           String
+  game             Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  stage            String   @default("prematch")
+  locked           Boolean  @default(false)
+  winlineEventId   Int
+  flipped          Boolean  @default(false)
+  moneylineJson    Json?
+  totalsJson       Json
+  handicapsJson    Json
+  mainTotalJson    Json?
+  mainHandicapJson Json?
+  ok               Boolean
+  rawMarketCount   Int      @default(0)
+  missingJson      Json?
+  fetchedAt        DateTime @default(now())
+  createdAt        DateTime @default(now())
+
+  @@unique([gameId, stage])
+  @@index([gameId, fetchedAt])
+}
+
+model PipelineEvent {
+  id         String   @id @default(uuid())
+  gameId     String?
+  game       Game?    @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  mlbGamePk  Int?
+  job        String
+  status     String
+  message    String?
+  metaJson   Json?
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  @@index([job, createdAt])
+  @@index([gameId, createdAt])
+  @@index([createdAt])
+}
+
+/// Immutable, versioned quant formula (v42 engine + editable overlay).
+model FormulaVersion {
+  id              String            @id @default(uuid())
+  versionLabel    String            @unique
+  base            String            @default("v42")
+  specJson        Json
+  notes           String?
+  createdBy       String            @default("system")
+  createdAt       DateTime          @default(now())
+  production      FormulaProduction?
+  proposals       AgentProposal[]
+  ledgerEntries   F5LedgerEntry[]
+
+  @@index([createdAt])
+}
+
+/// Singleton pointer to the currently active FormulaVersion.
+model FormulaProduction {
+  id        Int            @id @default(1)
+  versionId String         @unique
+  version   FormulaVersion @relation(fields: [versionId], references: [id])
+  updatedAt DateTime       @updatedAt
+}
+
+/// AI curation-agent proposal to patch the production FormulaSpec. Human-apply only.
+model AgentProposal {
+  id                      String          @id @default(uuid())
+  status                  String          @default("proposed")
+  title                   String
+  rationale               String
+  patchJson               Json
+  baselineVersionId       String
+  baselineMetricsJson     Json
+  proposedMetricsJson     Json
+  createdFormulaVersionId String?         @unique
+  createdFormulaVersion   FormulaVersion? @relation(fields: [createdFormulaVersionId], references: [id])
+  appliedAt               DateTime?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  @@index([status, createdAt])
+}
+
+/// One AI decision (bet|pass) per (gameId, track) — the factual ledger of the analytics desk.
+model F5LedgerEntry {
+  id                  String          @id @default(uuid())
+  gameId              String
+  game                Game            @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  track               String
+  action              String
+  pickMarket          String?
+  pickSide            String?
+  pickLine            Float?
+  decimalOdds         Float?
+  modelProb           Float?
+  valuePct            Float?
+  roiPct              Float?
+  confidenceTier      String?
+  stakeUnits          Float?
+  formulaVersionId    String
+  formulaVersion      FormulaVersion  @relation(fields: [formulaVersionId], references: [id])
+  signalsJson         Json?
+  dossierDigestJson   Json?
+  riskFlags           String[]        @default([])
+  rationale           String?
+  /// Short AI summary for Telegram (1–3 sentences); full detail stays in rationale.
+  notifyBrief         String?
+  captureReason       String?
+  lineupFingerprint   String?
+  spFingerprint       String?
+  aiTraceId           String?         @unique
+  aiTrace             AiDecisionTrace? @relation(fields: [aiTraceId], references: [id])
+  resultStatus        String          @default("pending")
+  /// When true, entry stays in the journal but is omitted from ROI/equity/stats.
+  excludedFromStats   Boolean         @default(false)
+  f5HomeRuns          Int?
+  f5AwayRuns          Int?
+  profitUnits         Float?
+  settledAt           DateTime?
+  capturedAt          DateTime        @default(now())
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@unique([gameId, track])
+  @@index([resultStatus])
+  @@index([track, capturedAt])
+}
+
+/// Dedupes Telegram bet alerts per game (stage / recalc fingerprint).
+model TelegramNotifyState {
+  id          String   @id @default(uuid())
+  gameId      String   @unique
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  fingerprint String
+  payloadJson Json?
+  lastSentAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// Full audit trail (prompt + tool calls + raw output) for one Decision-agent call.
+model AiDecisionTrace {
+  id            String         @id @default(uuid())
+  gameId        String
+  track         String
+  promptJson    Json
+  rawOutputJson Json
+  model         String
+  latencyMs     Int?
+  createdAt     DateTime       @default(now())
+  ledgerEntry   F5LedgerEntry?
+
+  @@index([gameId, track])
+}
+
+/// One turn (user or assistant) of a per-user conversation with the AI desk agent.
+model AgentChatMessage {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          String
+  content       String
+  toolsUsedJson Json?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
