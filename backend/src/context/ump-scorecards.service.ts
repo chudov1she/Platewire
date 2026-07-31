@@ -42,6 +42,9 @@ export class UmpScorecardsService {
         newest &&
         Date.now() - newest.fetchedAt.getTime() < UMP_SCORECARDS_TTL_MS
       ) {
+        // Catalog still fresh, but new GameOfficial rows appear every slate —
+        // always re-link MLB names → UmpScorecards profiles.
+        await this.relinkOfficials();
         return { upserted: 0, skipped: true };
       }
     }
