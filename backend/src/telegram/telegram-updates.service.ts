@@ -217,7 +217,7 @@ export class TelegramUpdatesService implements OnModuleInit, OnModuleDestroy {
       const isAdmin = user.status === UserStatus.ADMIN;
       const result = await this.agentChat.send(user.id, text, isAdmin);
       const reply = result.message?.trim() || '(пустой ответ)';
-      await this.bot.sendPlainText(chatId, reply);
+      await this.bot.sendMarkdown(chatId, reply);
     } catch (err) {
       this.logger.warn(
         `agent telegram chatId=${chatId}: ${err instanceof Error ? err.message : err}`,

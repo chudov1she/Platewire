@@ -4,8 +4,14 @@ import {
   composeRichHtml,
   type RichAlertPayload,
 } from './telegram-rich.js';
+import {
+  markdownToRichHtml,
+  markdownToTelegramHtml,
+} from './telegram-markdown.js';
 
 const TG_MAX_MESSAGE = 4096;
+/** Bot API 10.1 rich messages allow up to 32768 chars. */
+const TG_RICH_MAX = 30000;
 
 @Injectable()
 export class TelegramBotService {
@@ -94,20 +100,53 @@ export class TelegramBotService {
     return ok;
   }
 
-  /** Rich table alert (Bot API 10.1), falls back to classic <pre> HTML. */
-  async sendRichAlert(
+  /**
+   * Agent Markdown via Bot API 10.1 sendRichMessage (native tables/headings/lists).
+   * Falls back to rich HTML with <table>, then classic sendMessage HTML.
+   */
+  async sendMarkdown(chatId: string, markdown: string): Promise<boolean> {
+    const md = markdown.trim();
+    if (!md) return true;
+
+    const richParts =
+      md.length <= TG_RICH_MAX
+        ? [md]
+        : splitTelegramChunks(md, TG_RICH_MAX);
+
+    let anyOk = false;
+    for (const part of richParts) {
+      // 1) Native rich Markdown — GFM tables render as real tables
+      if (await this.sendRichMessage(chatId, { markdown: part })) {
+        anyOk = true;
+        continue;
+      }
+      // 2) Rich HTML with real <table> (same path as bet alerts)
+      const richHtml = markdownToRichHtml(part);
+      if (await this.sendRichMessage(chatId, { html: richHtml })) {
+        anyOk = true;
+        continue;
+      }
+      // 3) Classic sendMessage (tables degrade to <pre>)
+      const classic = markdownToTelegramHtml(part);
+      for (const chunk of splitTelegramHtmlChunks(classic)) {
+        const sent = await this.sendHtml(chatId, chunk);
+        if (sent) anyOk = true;
+        else {
+          const plain = escapeHtml(chunk.replace(/<[^>]+>/g, ''));
+          if (await this.sendHtml(chatId, plain)) anyOk = true;
+        }
+      }
+    }
+    return anyOk;
+  }
+
+  /** Low-level Bot API 10.1 sendRichMessage. */
+  async sendRichMessage(
     chatId: string,
-    payload: RichAlertPayload,
+    richMessage: { html?: string; markdown?: string },
   ): Promise<boolean> {
     const token = this.token();
     if (!token) return false;
-
-    const richHtml = composeRichHtml({
-      title: payload.title,
-      tableHtml: payload.tableHtml,
-      footer: payload.footer,
-    });
-
     try {
       const res = await fetch(
         `https://api.telegram.org/bot${token}/sendRichMessage`,
@@ -116,19 +155,38 @@ export class TelegramBotService {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            rich_message: { html: richHtml },
+            rich_message: richMessage,
           }),
         },
       );
       const data = (await res.json()) as { ok?: boolean; description?: string };
-      if (data.ok) return true;
-      throw new Error(data.description ?? 'sendRichMessage failed');
-    } catch (richErr) {
+      if (!data.ok) {
+        this.logger.debug(
+          `sendRichMessage ${chatId}: ${data.description ?? res.status}`,
+        );
+        return false;
+      }
+      return true;
+    } catch (err) {
       this.logger.debug(
-        `sendRichMessage unavailable (${richErr instanceof Error ? richErr.message : richErr}); fallback HTML`,
+        `sendRichMessage ${chatId}: ${err instanceof Error ? err.message : err}`,
       );
-      return this.sendHtml(chatId, payload.fallbackHtml);
+      return false;
     }
+  }
+
+  /** Rich table alert (Bot API 10.1), falls back to classic <pre> HTML. */
+  async sendRichAlert(
+    chatId: string,
+    payload: RichAlertPayload,
+  ): Promise<boolean> {
+    const richHtml = composeRichHtml({
+      title: payload.title,
+      tableHtml: payload.tableHtml,
+      footer: payload.footer,
+    });
+    if (await this.sendRichMessage(chatId, { html: richHtml })) return true;
+    return this.sendHtml(chatId, payload.fallbackHtml);
   }
 }
 
@@ -155,4 +213,37 @@ export function splitTelegramChunks(
   }
   if (rest.length) chunks.push(rest);
   return chunks;
+}
+
+/**
+ * Split HTML on blank lines / block boundaries so we rarely cut inside a tag.
+ * Falls back to hard char split if a single block is huge.
+ */
+export function splitTelegramHtmlChunks(
+  html: string,
+  max = TG_MAX_MESSAGE,
+): string[] {
+  if (html.length <= max) return [html];
+  const blocks = html.split(/\n{2,}/);
+  const chunks: string[] = [];
+  let cur = '';
+  const push = () => {
+    if (cur) chunks.push(cur);
+    cur = '';
+  };
+  for (const block of blocks) {
+    const next = cur ? `${cur}\n\n${block}` : block;
+    if (next.length <= max) {
+      cur = next;
+      continue;
+    }
+    push();
+    if (block.length <= max) {
+      cur = block;
+    } else {
+      chunks.push(...splitTelegramChunks(block, max));
+    }
+  }
+  push();
+  return chunks.length ? chunks : [html.slice(0, max)];
 }
