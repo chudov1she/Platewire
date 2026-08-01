@@ -431,7 +431,13 @@ export class GamePipelineService {
       select: {
         gameId: true,
         track: true,
-        game: { select: { mlbGamePk: true } },
+        game: {
+          select: {
+            mlbGamePk: true,
+            status: true,
+            inning: true,
+          },
+        },
       },
       take: 80,
     });
@@ -450,19 +456,33 @@ export class GamePipelineService {
       select: {
         gameId: true,
         stage: true,
-        game: { select: { mlbGamePk: true } },
+        game: {
+          select: {
+            mlbGamePk: true,
+            status: true,
+            inning: true,
+          },
+        },
       },
       take: 80,
     });
 
     const byGame = new Map<
       string,
-      { mlbGamePk: number; pendingTracks: Set<string>; missingTracks: Set<string> }
+      {
+        mlbGamePk: number;
+        status: string;
+        inning: number | null;
+        pendingTracks: Set<string>;
+        missingTracks: Set<string>;
+      }
     >();
 
     for (const row of pendingRows) {
       const cur = byGame.get(row.gameId) ?? {
         mlbGamePk: row.game.mlbGamePk,
+        status: row.game.status,
+        inning: row.game.inning,
         pendingTracks: new Set<string>(),
         missingTracks: new Set<string>(),
       };
@@ -480,6 +500,8 @@ export class GamePipelineService {
       if (hasEntry) continue;
       const cur = byGame.get(snap.gameId) ?? {
         mlbGamePk: snap.game.mlbGamePk,
+        status: snap.game.status,
+        inning: snap.game.inning,
         pendingTracks: new Set<string>(),
         missingTracks: new Set<string>(),
       };
@@ -493,6 +515,22 @@ export class GamePipelineService {
         await this.context.refresh(gameId);
 
         for (const stage of info.missingTracks) {
+          // Prematch is a closed book once the 1st inning is done — never
+          // first-capture it from live odds in the 2nd/3rd.
+          if (
+            stage === 'prematch' &&
+            completedInnings(info.inning) >= 1
+          ) {
+            await this.logEvent({
+              gameId,
+              mlbGamePk: info.mlbGamePk,
+              job: 'ledger_capture',
+              status: 'skipped',
+              message: `stage=${stage} reason=frozen_past_stage via=context_recalc`,
+              meta: { stage, reason: 'frozen_past_stage', via: 'context_recalc' },
+            });
+            continue;
+          }
           const result = await this.ledgerCapture.captureDecision(gameId, stage);
           if (result.captured) changed += 1;
           await this.logEvent({

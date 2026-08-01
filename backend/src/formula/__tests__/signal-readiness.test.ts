@@ -123,6 +123,25 @@ describe('signal-readiness', () => {
     assert.equal(r.score, 90);
   });
 
+  it('zone default but UmpScorecards present -> ump_zone soft gap only', () => {
+    const sources = readySources();
+    sources.ump_strike_zone_pct = { value: null, source: 'default', ready: false };
+    sources.ump_accuracy_above_x = {
+      value: 0.49,
+      source: 'umpscorecards',
+      ready: true,
+    };
+    const r = evaluateReadiness({
+      track: 'prematch',
+      input_sources: sources,
+      market: { markets: completeMl(), marketsUsed: true, locked: true, source: 'winline' },
+      context: { hasLineup: true, hasHomeSp: true, hasAwaySp: true },
+    });
+    assert.equal(r.ready, true);
+    assert.deepEqual(r.softGaps, ['ump_zone:statcast_default']);
+    assert.ok(!r.softGaps.includes('ump:default'));
+  });
+
   it('score math sanity', () => {
     assert.equal(computeScore(['home:OPS=default'], []), 75);
     assert.equal(

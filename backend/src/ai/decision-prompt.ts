@@ -14,6 +14,7 @@ export const DECISION_SYSTEM_PROMPT = `Ты — старший аналитик 
 7. notify_brief — ОБЯЗАТЕЛЬНО: 1–3 коротких предложения НА РУССКОМ для Telegram-уведомления. Это понятная сводка именно по прогнозу ЭТОГО этапа (что ставим/пассуем и почему в одном дыхании). Без канцелярита, без сырых простыней λ/%/порогов, без копипасты rationale целиком. Пиши так, будто объясняешь коллеге за 10 секунд.
 8. risk_flags — короткие технические теги на английском (например: "thin_lineup_data", "sp_fatigue", "small_sample_ump", "weather_neutral", "live_recalc_uncertain") — используй их честно, это часть аудита.
 9. Ты видишь soft gaps (тонкие места данных) в брифинге — они не блокируют решение, но должны явно влиять на твою уверенность и rationale.
+10. Судья: если в брифе указано имя HP и/или метрики UmpScorecards (accuracyΔx / consistency / favor / runImpact) — данные по судье ЕСТЬ. Soft gap "ump_zone:statcast_default" значит только что Statcast-роллап страйк-зоны подставлен лигой (нейтрально) — НЕ пиши «нет данных по судье», «судья отсутствует», «отсутствие данных по судье». Фраза про отсутствие судьи допустима только при soft gap "ump:default" (нет ни зоны, ни UmpScorecards) или если HP = n/a и метрики n/a.
 
 Помни: это не игра и не текстовое упражнение. Ledger, который создаст твоё решение — это факт учёта, как будто деньги реально поставлены. Думай соответственно: консервативно, честно, без домыслов сверх того, что показывают данные и инструменты.`;
 
@@ -65,8 +66,17 @@ export function buildDecisionBrief(opts: {
   lines.push(
     `Погода: ${fmtNum(inputs.temperature_f, 0)}°F, влажность ${fmtNum(inputs.humidity, 0)}%, ветер ${fmtNum(inputs.wind_speed_mph, 0)} mph`,
   );
+  const zonePct =
+    inputs.ump_strike_zone_pct != null
+      ? fmtNum(inputs.ump_strike_zone_pct, 3)
+      : 'league_default';
+  const hasUsc =
+    inputs.ump_accuracy_above_x != null ||
+    inputs.ump_consistency != null ||
+    inputs.ump_favor_abs != null ||
+    inputs.ump_run_impact != null;
   lines.push(
-    `Судья (страйк-зона): ${fmtNum(inputs.ump_strike_zone_pct, 3)} | accuracyΔx=${fmtNum(inputs.ump_accuracy_above_x, 2)} | consistency=${fmtNum(inputs.ump_consistency, 1)} | favor=${fmtNum(inputs.ump_favor_abs, 2)} | runImpact=${fmtNum(inputs.ump_run_impact, 2)}`,
+    `Судья HP: ${inputs.ump_hp_name ?? 'n/a'} | страйк-зона=${zonePct}${inputs.ump_strike_zone_pct == null ? ' (Statcast rollup нет → нейтраль формулы)' : ''} | UmpScorecards=${hasUsc ? 'ok' : 'n/a'} accuracyΔx=${fmtNum(inputs.ump_accuracy_above_x, 2)} | consistency=${fmtNum(inputs.ump_consistency, 1)} | favor=${fmtNum(inputs.ump_favor_abs, 2)} | runImpact=${fmtNum(inputs.ump_run_impact, 2)}`,
   );
   lines.push(
     `Home: OPS=${fmtNum(inputs.home.ops)} SP_ERA=${fmtNum(inputs.home.sp_era)} barrel%=${fmtNum(inputs.home.barrel_pct)} hardhit%=${fmtNum(inputs.home.hardhit_pct)}`,

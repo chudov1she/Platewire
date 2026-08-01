@@ -83,6 +83,45 @@ export function stageForGame(
   return 'prematch';
 }
 
+const STAGE_RANK: Record<F5OddsStage, number> = {
+  prematch: 0,
+  inn1: 1,
+  inn2: 2,
+};
+
+/**
+ * May this F5 track still be rewritten on lineup/SP drift?
+ *
+ * Recalc is allowed on ANY stage — but ONLY inside that stage's inning window.
+ * Once the game moves past the window, the ledger row is frozen forever
+ * (old bets are not cancelled / not rewritten with live lines).
+ *
+ * Windows (completed = inning - 1):
+ * - prematch: before 1st inning finishes (PREVIEW or LIVE inning 1)
+ * - inn1:     during the 2nd inning (completed === 1)
+ * - inn2:     from the 3rd through end of F5 (completed >= 2, F5 not over)
+ */
+export function stageOpenForContextRecalc(
+  track: string,
+  status: string,
+  inning: number | null | undefined,
+): boolean {
+  if (!isF5OddsStage(track)) return false;
+  if (f5IsComplete(inning)) return false;
+  return track === stageForGame(status, inning);
+}
+
+/** True when `track` is strictly behind the game's current F5 stage. */
+export function stageIsPast(
+  track: string,
+  status: string,
+  inning: number | null | undefined,
+): boolean {
+  if (!isF5OddsStage(track)) return false;
+  const current = stageForGame(status, inning);
+  return STAGE_RANK[track] < STAGE_RANK[current];
+}
+
 /** Stages that should be captured given current game state. */
 export function dueStages(
   status: string,

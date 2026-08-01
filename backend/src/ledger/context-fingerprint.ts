@@ -7,21 +7,47 @@ export type LineupFpRow = {
   fullName?: string | null;
 };
 
-/** SHA256[:24] of confirmed batting orders — port of baseballai lineup_fingerprint. */
+/** Prefix so we can migrate off the old order-sensitive digest without a mass recalc. */
+export const LINEUP_FP_PLAYER_SET_PREFIX = 'ps:';
+
+/**
+ * Fingerprint of *who* is in the confirmed lineup (per side), not batting order.
+ * Recalc should fire only when a player is substituted — order reshuffles are ignored.
+ */
 export function digestLineupFingerprint(rows: LineupFpRow[]): string | null {
-  const parts: string[] = [];
-  for (const row of [...rows].sort((a, b) => {
-    const side = a.side.localeCompare(b.side);
-    if (side !== 0) return side;
-    return (a.battingOrder ?? 0) - (b.battingOrder ?? 0);
-  })) {
+  const parts = new Set<string>();
+  for (const row of rows) {
+    // Still require a confirmed batting-order slot (same gate as before).
     if (row.battingOrder == null) continue;
     const id = row.mlbPlayerId ?? row.fullName;
     if (id == null || id === '') continue;
-    parts.push(`${row.side}:${id}:${row.battingOrder}`);
+    parts.add(`${row.side}:${id}`);
   }
-  if (!parts.length) return null;
-  return createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 24);
+  if (!parts.size) return null;
+  const key = [...parts].sort().join('|');
+  const hash = createHash('sha256').update(key).digest('hex').slice(0, 24);
+  return `${LINEUP_FP_PLAYER_SET_PREFIX}${hash}`;
+}
+
+/** True when stored fp is the new player-set format. */
+export function isPlayerSetLineupFingerprint(
+  fp: string | null | undefined,
+): boolean {
+  return typeof fp === 'string' && fp.startsWith(LINEUP_FP_PLAYER_SET_PREFIX);
+}
+
+/**
+ * Lineup identity changed enough to warrant a bet recalc.
+ * Old order-based fingerprints are treated as a one-time reseed (no recalc).
+ */
+export function lineupSubstitutionDetected(opts: {
+  previousFp: string | null | undefined;
+  nextFp: string | null | undefined;
+}): boolean {
+  const { previousFp, nextFp } = opts;
+  if (nextFp == null || previousFp == null) return false;
+  if (!isPlayerSetLineupFingerprint(previousFp)) return false;
+  return previousFp !== nextFp;
 }
 
 /** SHA256[:24] of probable starting pitchers (home/away mlb ids). */

@@ -75,9 +75,18 @@ export class SignalReadinessService {
       oddsOk = false;
     }
 
-    const ump = input.input_sources.ump_strike_zone_pct;
-    if (!ump || ump.source === 'default') {
+    const umpZone = input.input_sources.ump_strike_zone_pct;
+    const umpUsc =
+      input.input_sources.ump_accuracy_above_x ??
+      input.input_sources.ump_consistency;
+    const zoneDefault = !umpZone || umpZone.source === 'default';
+    const hasUmpScorecards =
+      umpUsc?.source === 'umpscorecards' && umpUsc.value != null;
+    if (zoneDefault && !hasUmpScorecards) {
       softGaps.push('ump:default');
+    } else if (zoneDefault && hasUmpScorecards) {
+      // Profile exists; only Statcast called-strike rollup is league-default.
+      softGaps.push('ump_zone:statcast_default');
     }
     const temp = input.input_sources.temperature_f;
     if (!temp || temp.source === 'default') {

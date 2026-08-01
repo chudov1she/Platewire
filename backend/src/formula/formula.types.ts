@@ -73,6 +73,8 @@ export type MatchupInputs = {
   wind_speed_mph?: number | null;
   wind_direction_deg?: number | null;
   day_night?: string | null;
+  /** Home-plate umpire display name (MLB). */
+  ump_hp_name?: string | null;
   ump_strike_zone_pct?: number | null;
   /** UmpScorecards accuracy vs expected (percentage points). */
   ump_accuracy_above_x?: number | null;

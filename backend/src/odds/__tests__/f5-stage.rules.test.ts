@@ -4,6 +4,7 @@ import {
   completedInnings,
   dueStages,
   stageForGame,
+  stageOpenForContextRecalc,
 } from '../f5-scope.js';
 import { decideF5StageWrite } from '../f5-stage.rules.js';
 
@@ -26,6 +27,16 @@ describe('f5-scope', () => {
     assert.deepEqual(dueStages('PREVIEW', null), ['prematch']);
     assert.deepEqual(dueStages('LIVE', 2), ['prematch', 'inn1']);
     assert.deepEqual(dueStages('LIVE', 4), ['prematch', 'inn1', 'inn2']);
+  });
+
+  it('stageOpenForContextRecalc freezes past stages', () => {
+    assert.equal(stageOpenForContextRecalc('prematch', 'LIVE', 1), true);
+    assert.equal(stageOpenForContextRecalc('prematch', 'LIVE', 3), false);
+    assert.equal(stageOpenForContextRecalc('inn1', 'LIVE', 3), false);
+    assert.equal(stageOpenForContextRecalc('inn2', 'LIVE', 3), true);
+    assert.equal(stageOpenForContextRecalc('inn1', 'LIVE', 2), true);
+    assert.equal(stageOpenForContextRecalc('inn2', 'LIVE', 2), false);
+    assert.equal(stageOpenForContextRecalc('inn2', 'LIVE', 6), false);
   });
 });
 

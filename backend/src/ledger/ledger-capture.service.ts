@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client.js';
-import { isF5OddsStage, type F5OddsStage } from '../odds/f5-scope.js';
+import { isF5OddsStage, stageOpenForContextRecalc, type F5OddsStage } from '../odds/f5-scope.js';
 import { OddsService } from '../odds/odds.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { MatchupInputsService, resolveStartingPitcherId } from '../formula/matchup-inputs.service.js';
@@ -13,6 +13,8 @@ import type { SavantPreviewSummary } from '../savant/savant.client.js';
 import {
   digestLineupFingerprint,
   digestSpFingerprint,
+  isPlayerSetLineupFingerprint,
+  lineupSubstitutionDetected,
 } from './context-fingerprint.js';
 
 export type CaptureOptions = {
@@ -91,6 +93,30 @@ export class LedgerCaptureService {
     const isRecalc = Boolean(opts.reason?.includes('recalc'));
     const captureReason =
       opts.reason ?? (opts.force ? 'forced' : 'ok');
+
+    const gameRow = await this.prisma.game.findUnique({
+      where: { id: gameId },
+      select: { status: true, inning: true },
+    });
+    if (!gameRow) {
+      throw new NotFoundException(`Game ${gameId} not found`);
+    }
+
+    // Hard gate: never rewrite a stage outside its inning window.
+    // Prematch/inn1 bets stay as placed once the game has moved on.
+    if (
+      isRecalc &&
+      !stageOpenForContextRecalc(stage, gameRow.status, gameRow.inning)
+    ) {
+      const existingFrozen = await this.prisma.f5LedgerEntry.findUnique({
+        where: { gameId_track: { gameId, track: stage } },
+      });
+      return {
+        captured: false,
+        entry: existingFrozen ? this.serialize(existingFrozen) : null,
+        reason: 'frozen_past_stage',
+      };
+    }
 
     const existing = await this.prisma.f5LedgerEntry.findUnique({
       where: { gameId_track: { gameId, track: stage } },
@@ -393,10 +419,22 @@ export class LedgerCaptureService {
     for (const existing of pending) {
       if (!isF5OddsStage(existing.track)) continue;
 
-      const lineupChanged =
-        lineupFp != null &&
-        existing.lineupFingerprint != null &&
-        lineupFp !== existing.lineupFingerprint;
+      // Never rewrite a past stage (e.g. prematch once the 1st is done).
+      if (
+        !stageOpenForContextRecalc(
+          existing.track,
+          game.status,
+          game.inning,
+        )
+      ) {
+        reasons.push(`${existing.track}:frozen_past_stage`);
+        continue;
+      }
+
+      const lineupSubstituted = lineupSubstitutionDetected({
+        previousFp: existing.lineupFingerprint,
+        nextFp: lineupFp,
+      });
       const spChanged =
         spFp != null &&
         existing.spFingerprint != null &&
@@ -404,10 +442,14 @@ export class LedgerCaptureService {
 
       const lineupFirstSeen =
         lineupFp != null && existing.lineupFingerprint == null;
+      const lineupFormatMigrate =
+        lineupFp != null &&
+        existing.lineupFingerprint != null &&
+        !isPlayerSetLineupFingerprint(existing.lineupFingerprint);
       const spFirstSeen = spFp != null && existing.spFingerprint == null;
 
-      if (!lineupChanged && !spChanged) {
-        if (lineupFirstSeen || spFirstSeen) {
+      if (!lineupSubstituted && !spChanged) {
+        if (lineupFirstSeen || lineupFormatMigrate || spFirstSeen) {
           await this.prisma.f5LedgerEntry.update({
             where: { id: existing.id },
             data: {
@@ -415,14 +457,18 @@ export class LedgerCaptureService {
               spFingerprint: spFp ?? existing.spFingerprint,
             },
           });
-          reasons.push(`${existing.track}:fp_seeded`);
+          reasons.push(
+            lineupFormatMigrate
+              ? `${existing.track}:fp_migrate_player_set`
+              : `${existing.track}:fp_seeded`,
+          );
         } else {
           reasons.push(`${existing.track}:fp_same`);
         }
         continue;
       }
 
-      const reason = lineupChanged
+      const reason = lineupSubstituted
         ? spChanged
           ? 'lineup_sp_recalc'
           : 'lineup_recalc'

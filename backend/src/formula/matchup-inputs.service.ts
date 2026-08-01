@@ -146,6 +146,16 @@ export class MatchupInputsService {
     }
 
     const hp = game.gameOfficials.find((o) => o.role === 'Home Plate');
+    const umpHpName =
+      hp?.official.fullName ?? hp?.official.umpScorecardName ?? null;
+
+    const scorecard = hp
+      ? await this.umpScorecards.resolveForOfficial({
+          umpScorecardName: hp.official.umpScorecardName,
+          fullName: hp.official.fullName,
+        })
+      : null;
+
     let umpStrike: number | null = null;
     if (hp?.official.features?.calledStrikeRate != null) {
       umpStrike = hp.official.features.calledStrikeRate;
@@ -155,7 +165,9 @@ export class MatchupInputsService {
         ready: hp.official.features.ready,
       };
     } else {
-      notes.push('ump_default');
+      // League-default zone only — not "umpire missing". Prefer a precise note
+      // when UmpScorecards already covers this HP.
+      notes.push(scorecard ? 'ump_zone_statcast_default' : 'ump_default');
       input_sources.ump_strike_zone_pct = {
         value: null,
         source: 'default',
@@ -163,12 +175,6 @@ export class MatchupInputsService {
       };
     }
 
-    const scorecard = hp
-      ? await this.umpScorecards.resolveForOfficial({
-          umpScorecardName: hp.official.umpScorecardName,
-          fullName: hp.official.fullName,
-        })
-      : null;
     const umpAccuracyAboveX = scorecard?.accuracy_above_x ?? null;
     const umpConsistency = scorecard?.consistency ?? null;
     const umpFavorAbs = scorecard?.favor_abs_mean ?? null;
@@ -181,6 +187,16 @@ export class MatchupInputsService {
       };
       input_sources.ump_consistency = {
         value: umpConsistency,
+        source: 'umpscorecards',
+        ready: scorecard.games_sample >= 15,
+      };
+      input_sources.ump_favor_abs = {
+        value: umpFavorAbs,
+        source: 'umpscorecards',
+        ready: scorecard.games_sample >= 15,
+      };
+      input_sources.ump_run_impact = {
+        value: umpRunImpact,
         source: 'umpscorecards',
         ready: scorecard.games_sample >= 15,
       };
@@ -204,6 +220,7 @@ export class MatchupInputsService {
       wind_speed_mph: weather.wind_speed_mph,
       wind_direction_deg: weather.wind_direction_deg,
       day_night: game.dayNight,
+      ump_hp_name: umpHpName,
       ump_strike_zone_pct: umpStrike,
       ump_accuracy_above_x: umpAccuracyAboveX,
       ump_consistency: umpConsistency,
