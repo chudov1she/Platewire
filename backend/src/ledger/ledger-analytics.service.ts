@@ -200,6 +200,7 @@ export class LedgerAnalyticsService {
     riskFlags: string[];
     rationale: string | null;
     notifyBrief?: string | null;
+    captureReason?: string | null;
     capturedAt: Date;
     settledAt: Date | null;
     game: {
@@ -241,6 +242,7 @@ export class LedgerAnalyticsService {
       riskFlags: row.riskFlags,
       rationale: row.rationale,
       notifyBrief: row.notifyBrief ?? null,
+      captureReason: row.captureReason ?? null,
       versionLabel: row.formulaVersion.versionLabel,
       gameDateUtc: row.game.gameDateUtc?.toISOString() ?? null,
       capturedAt: row.capturedAt.toISOString(),

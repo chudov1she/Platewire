@@ -223,7 +223,11 @@ export function MatchMarkets({
           <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
             <p className="text-[11px] font-semibold uppercase text-muted-foreground">Запись в журнале</p>
             {entry.action === "pass" ? (
-              <p className="mt-1 text-muted-foreground">Pass — модель не увидела ценности. {entry.rationale}</p>
+              <p className="mt-1 text-muted-foreground">
+                {entry.captureReason && ["no_odds", "odds_not_locked", "not_ready"].includes(entry.captureReason)
+                  ? `Пропуск (${entry.captureReason}) — ${entry.notifyBrief ?? entry.rationale ?? "стадия без ставки."}`
+                  : `Pass — модель не увидела ценности. ${entry.rationale ?? ""}`}
+              </p>
             ) : (
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 <span className="font-semibold">{entry.pickLabel}</span>

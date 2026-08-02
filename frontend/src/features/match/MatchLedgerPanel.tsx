@@ -16,7 +16,13 @@ function EntryCard({ entry }: { entry: NestLedgerEntry }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">{entry.track}</Badge>
-          <span className="font-semibold">{entry.action === "pass" ? "PASS" : entry.pickLabel ?? `${entry.pickMarket}/${entry.pickSide}`}</span>
+          <span className="font-semibold">
+            {entry.action === "pass"
+              ? entry.captureReason && ["no_odds", "odds_not_locked", "not_ready"].includes(entry.captureReason)
+                ? `SKIP (${entry.captureReason})`
+                : "PASS"
+              : entry.pickLabel ?? `${entry.pickMarket}/${entry.pickSide}`}
+          </span>
           {entry.decimalOdds != null ? <span className="font-mono text-xs text-muted-foreground">@{entry.decimalOdds.toFixed(2)}</span> : null}
           {entry.confidenceTier ? <Badge variant="secondary">{entry.confidenceTier}</Badge> : null}
         </div>

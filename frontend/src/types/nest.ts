@@ -531,6 +531,7 @@ export type NestLedgerEntry = {
   riskFlags: string[];
   rationale: string | null;
   notifyBrief: string | null;
+  captureReason?: string | null;
   versionLabel: string;
   gameDateUtc: string | null;
   capturedAt: string;

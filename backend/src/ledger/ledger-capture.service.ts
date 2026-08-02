@@ -3,6 +3,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { isF5OddsStage, stageOpenForContextRecalc, type F5OddsStage } from '../odds/f5-scope.js';
 import { OddsService } from '../odds/odds.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { FormulaStoreService } from '../formula/formula-store.service.js';
 import { MatchupInputsService, resolveStartingPitcherId } from '../formula/matchup-inputs.service.js';
 import { MarketLoaderService } from '../formula/market-loader.service.js';
 import { SignalReadinessService } from '../formula/signal-readiness.service.js';
@@ -16,6 +17,40 @@ import {
   isPlayerSetLineupFingerprint,
   lineupSubstitutionDetected,
 } from './context-fingerprint.js';
+
+/** Pipeline blocked the stage before AI — replaceable when data appears. */
+const TECHNICAL_SKIP_REASONS = new Set([
+  'no_odds',
+  'odds_not_locked',
+  'not_ready',
+]);
+
+function isReplaceableTechnicalSkip(row: {
+  action: string;
+  captureReason: string | null;
+  resultStatus: string;
+}): boolean {
+  return (
+    row.resultStatus === 'pending' &&
+    row.action === 'pass' &&
+    row.captureReason != null &&
+    TECHNICAL_SKIP_REASONS.has(row.captureReason)
+  );
+}
+
+function technicalSkipBrief(reason: string, gaps?: string[]): string {
+  if (reason === 'no_odds') {
+    return 'Пропуск стадии: нет пригодных F5-рынков (или линии отфильтрованы).';
+  }
+  if (reason === 'odds_not_locked') {
+    return 'Пропуск стадии: линии ещё не зафиксированы (lock).';
+  }
+  if (reason === 'not_ready') {
+    const g = gaps?.length ? ` Hard gaps: ${gaps.join(', ')}.` : '';
+    return `Пропуск стадии: данные не готовы.${g}`;
+  }
+  return `Пропуск стадии: ${reason}`;
+}
 
 export type CaptureOptions = {
   /** Bypass the readiness hard-gate (still records the decision, marked forced). */
@@ -79,6 +114,7 @@ export class LedgerCaptureService {
     private readonly decisionAgent: DecisionAgentService,
     private readonly notify: TelegramNotifyService,
     private readonly odds: OddsService,
+    private readonly formulaStore: FormulaStoreService,
   ) {}
 
   async captureDecision(
@@ -121,7 +157,9 @@ export class LedgerCaptureService {
     const existing = await this.prisma.f5LedgerEntry.findUnique({
       where: { gameId_track: { gameId, track: stage } },
     });
-    if (existing && !isRecalc) {
+    const overwriteTechnical =
+      existing != null && isReplaceableTechnicalSkip(existing);
+    if (existing && !isRecalc && !overwriteTechnical) {
       return {
         captured: false,
         entry: this.serialize(existing),
@@ -192,10 +230,20 @@ export class LedgerCaptureService {
 
     const marketLoad = await this.markets.load(gameId, stage);
     if (!marketLoad.marketsUsed) {
-      return { captured: false, entry: null, reason: 'no_odds' };
+      return this.recordTechnicalSkip({
+        gameId,
+        stage,
+        reason: 'no_odds',
+        existing,
+      });
     }
     if (!marketLoad.locked && !opts.allowUnlocked) {
-      return { captured: false, entry: null, reason: 'odds_not_locked' };
+      return this.recordTechnicalSkip({
+        gameId,
+        stage,
+        reason: 'odds_not_locked',
+        existing,
+      });
     }
 
     const built = await this.matchup.build(gameId);
@@ -206,7 +254,13 @@ export class LedgerCaptureService {
       context: built.context,
     });
     if (!gate.ready && !opts.force) {
-      return { captured: false, entry: null, reason: 'not_ready', readiness: gate };
+      return this.recordTechnicalSkip({
+        gameId,
+        stage,
+        reason: 'not_ready',
+        existing,
+        readiness: gate,
+      });
     }
 
     const summary = (game.savantPreview?.summaryJson ??
@@ -272,7 +326,7 @@ export class LedgerCaptureService {
     let entry: LedgerRow;
     let materialChange = true;
     const previousPick =
-      existing && isRecalc
+      existing && (isRecalc || overwriteTechnical)
         ? {
             action: existing.action,
             pickMarket: existing.pickMarket,
@@ -281,11 +335,14 @@ export class LedgerCaptureService {
             decimalOdds: existing.decimalOdds,
           }
         : null;
-    if (existing && isRecalc) {
+    if (existing && (isRecalc || overwriteTechnical)) {
       materialChange = this.isMaterialChange(existing, data);
       entry = await this.prisma.f5LedgerEntry.update({
         where: { id: existing.id },
-        data,
+        data: {
+          ...data,
+          excludedFromStats: false,
+        },
       });
     } else {
       entry = await this.prisma.f5LedgerEntry.create({
@@ -345,6 +402,127 @@ export class LedgerCaptureService {
       reason: isRecalc ? captureReason : result.decision.action,
       readiness: gate,
       materialChange,
+    };
+  }
+
+  /**
+   * Persist a replaceable PASS when the pipeline cannot run the Decision agent
+   * yet (missing/unlocked odds, hard readiness gaps). Later successful capture
+   * overwrites this row; Telegram is not notified (same as AI pass).
+   */
+  private async recordTechnicalSkip(opts: {
+    gameId: string;
+    stage: F5OddsStage;
+    reason: string;
+    existing: {
+      id: string;
+      action: string;
+      captureReason: string | null;
+      resultStatus: string;
+    } | null;
+    readiness?: ReadinessResult;
+  }): Promise<CaptureResult> {
+    const { gameId, stage, reason, readiness } = opts;
+    let existing = opts.existing;
+    if (!existing) {
+      existing = await this.prisma.f5LedgerEntry.findUnique({
+        where: { gameId_track: { gameId, track: stage } },
+        select: {
+          id: true,
+          action: true,
+          captureReason: true,
+          resultStatus: true,
+        },
+      });
+    }
+
+    if (existing && existing.resultStatus !== 'pending') {
+      const full = await this.prisma.f5LedgerEntry.findUnique({
+        where: { id: existing.id },
+      });
+      return {
+        captured: false,
+        entry: full ? this.serialize(full) : null,
+        reason: 'already_settled',
+        readiness,
+      };
+    }
+    if (existing && !isReplaceableTechnicalSkip(existing)) {
+      const full = await this.prisma.f5LedgerEntry.findUnique({
+        where: { id: existing.id },
+      });
+      return {
+        captured: false,
+        entry: full ? this.serialize(full) : null,
+        reason: 'already_captured',
+        readiness,
+      };
+    }
+    if (existing && existing.captureReason === reason) {
+      const full = await this.prisma.f5LedgerEntry.findUnique({
+        where: { id: existing.id },
+      });
+      return {
+        captured: false,
+        entry: full ? this.serialize(full) : null,
+        reason,
+        readiness,
+      };
+    }
+
+    const prod = await this.formulaStore.getProduction();
+    if (!prod.versionId) {
+      return { captured: false, entry: null, reason, readiness };
+    }
+
+    const brief = technicalSkipBrief(reason, readiness?.hardGaps);
+    const data = {
+      action: 'pass' as const,
+      pickMarket: null,
+      pickSide: null,
+      pickLine: null,
+      decimalOdds: null,
+      modelProb: null,
+      valuePct: null,
+      roiPct: null,
+      confidenceTier: null,
+      stakeUnits: null,
+      formulaVersionId: prod.versionId,
+      signalsJson: undefined,
+      dossierDigestJson: {
+        technical_skip: true,
+        reason,
+        hardGaps: readiness?.hardGaps ?? [],
+        softGaps: readiness?.softGaps ?? [],
+      } as unknown as Prisma.InputJsonValue,
+      riskFlags: [reason],
+      rationale: brief,
+      notifyBrief: brief,
+      captureReason: reason,
+      excludedFromStats: true,
+      resultStatus: 'pending' as const,
+      capturedAt: new Date(),
+    };
+
+    const entry = existing
+      ? await this.prisma.f5LedgerEntry.update({
+          where: { id: existing.id },
+          data,
+        })
+      : await this.prisma.f5LedgerEntry.create({
+          data: { gameId, track: stage, ...data },
+        });
+
+    this.logger.log(
+      `ledger technical skip game=${gameId} track=${stage} reason=${reason}`,
+    );
+
+    return {
+      captured: true,
+      entry: this.serialize(entry),
+      reason,
+      readiness,
+      materialChange: !existing || existing.captureReason !== reason,
     };
   }
 

@@ -13,29 +13,25 @@ export type MarketLoadResult = {
   stale: boolean;
 };
 
-/** ML needs home+away; total needs over+under; at least one complete market. */
+/** At least one complete market family (ML pair, total O/U, or runline pair). */
 export function marketsComplete(lines: MarketLine[]): boolean {
-  const hasMl = lines.some((l) => l.market === 'moneyline');
-  const hasTotal = lines.some((l) => l.market === 'total');
-  if (!hasMl && !hasTotal) return false;
+  const mlHome = lines.some(
+    (l) => l.market === 'moneyline' && l.side === 'home',
+  );
+  const mlAway = lines.some(
+    (l) => l.market === 'moneyline' && l.side === 'away',
+  );
+  if (mlHome && mlAway) return true;
 
-  if (hasMl) {
-    const home = lines.some(
-      (l) => l.market === 'moneyline' && l.side === 'home',
-    );
-    const away = lines.some(
-      (l) => l.market === 'moneyline' && l.side === 'away',
-    );
-    if (!home || !away) return false;
-  }
+  const over = lines.some((l) => l.market === 'total' && l.side === 'over');
+  const under = lines.some((l) => l.market === 'total' && l.side === 'under');
+  if (over && under) return true;
 
-  if (hasTotal) {
-    const over = lines.some((l) => l.market === 'total' && l.side === 'over');
-    const under = lines.some((l) => l.market === 'total' && l.side === 'under');
-    if (!over || !under) return false;
-  }
+  const rlHome = lines.some((l) => l.market === 'runline' && l.side === 'home');
+  const rlAway = lines.some((l) => l.market === 'runline' && l.side === 'away');
+  if (rlHome && rlAway) return true;
 
-  return true;
+  return false;
 }
 
 /** Sane F5 book odds for picks — filters misparsed / novelty longshots. */

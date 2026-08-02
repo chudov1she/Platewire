@@ -52,6 +52,17 @@ describe('marketsComplete', () => {
       true,
     );
   });
+
+  it('complete total OK even if ML is one-sided (blowout odds filtered)', () => {
+    assert.equal(
+      marketsComplete([
+        { market: 'moneyline', side: 'away', decimal_odds: 1.25 },
+        { market: 'total', side: 'over', decimal_odds: 1.98, line: 4.5 },
+        { market: 'total', side: 'under', decimal_odds: 1.8, line: 4.5 },
+      ]),
+      true,
+    );
+  });
 });
 
 describe('signal-readiness', () => {
