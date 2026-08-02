@@ -60,9 +60,10 @@ docker compose --env-file .env.docker up --build
 
 | URL | Назначение |
 |-----|------------|
-| http://localhost:8080 | Приложение |
-| http://localhost:8080/docs | Swagger |
-| http://localhost:8080/api/v1 | API |
+| http://baseballai.mooo.com | Прод (VPS, `HTTP_PORT=80`) |
+| http://localhost:8080 | Локально (`HTTP_PORT=8080`) |
+| `/docs` | Swagger |
+| `/api/v1` | API |
 
 Логин по умолчанию: `admin` / `admin` (из `ADMIN_LOGIN` / `ADMIN_PASSWORD`).
 
@@ -125,8 +126,8 @@ npm run dev
 **Telegram**
 
 1. BotFather: токен → `TELEGRAM_BOT_TOKEN`, username → `TELEGRAM_BOT_USERNAME`
-2. Login Widget: `/setdomain` на хост фронта (или ngrok)
-3. Mini App: Menu Button URL = URL приложения — автологин через `initData`
+2. Login Widget: `/setdomain` → `baseballai.mooo.com`
+3. Mini App: Menu Button URL = `http://baseballai.mooo.com` — автологин через `initData`
 4. Опционально: бот отвечает AI-агентом (long-poll `getUpdates`), уведомления в `TELEGRAM_NOTIFY_CHAT_IDS`
 
 ---
@@ -152,6 +153,8 @@ npm run dev
 
 | Переменная | Зачем |
 |------------|--------|
+| `PUBLIC_APP_URL` | Публичный URL (`http://baseballai.mooo.com`) |
+| `HTTP_PORT` | Порт nginx на хосте (`80` на VPS, `8080` локально) |
 | `DATABASE_URL` | Postgres (в Docker задаётся compose) |
 | `JWT_SECRET` | Подпись токенов |
 | `TELEGRAM_BOT_TOKEN` | Widget, WebApp, бот, notify |

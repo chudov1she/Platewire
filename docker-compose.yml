@@ -1,11 +1,11 @@
-# Local stack: nginx :8080 → frontend + /api → backend + postgres
+# Stack: nginx → frontend + /api → backend + postgres
 # Usage:
 #   cp .env.docker.example .env.docker
 #   # fill AI_API_KEY / TELEGRAM_* as needed
 #   docker compose --env-file .env.docker up --build
 #
-# App:  http://localhost:8080
-# Docs: http://localhost:8080/docs
+# Prod domain: http://baseballai.mooo.com  (HTTP_PORT=80 in .env.docker)
+# Local:       http://localhost:8080       (set HTTP_PORT=8080)
 
 name: platewire
 
