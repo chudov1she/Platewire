@@ -47,6 +47,39 @@ describe('f5-settle', () => {
     );
   });
 
+  it('settles team_total with encoded side', () => {
+    assert.equal(
+      settleBetResult({
+        market: 'team_total',
+        side: 'home_over',
+        line: 2.5,
+        f5Home: 3,
+        f5Away: 1,
+      }),
+      'WIN',
+    );
+    assert.equal(
+      settleBetResult({
+        market: 'team_total',
+        side: 'away_under',
+        line: 2.5,
+        f5Home: 3,
+        f5Away: 1,
+      }),
+      'WIN',
+    );
+    assert.equal(
+      settleBetResult({
+        market: 'team_total',
+        side: 'home_over',
+        line: 2.5,
+        f5Home: 2,
+        f5Away: 1,
+      }),
+      'LOSE',
+    );
+  });
+
   it('computes profit', () => {
     assert.equal(profitForResult(100, 2.0, 'WIN'), 100);
     assert.equal(profitForResult(100, 2.0, 'LOSE'), -100);

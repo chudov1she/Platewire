@@ -311,12 +311,22 @@ export async function loadLedger(params?: { track?: string; status?: string; act
   return getJson<NestLedgerEntry[]>(`/ledger?${q}`);
 }
 
-export async function loadLedgerStats(days = 7): Promise<NestLedgerStats> {
-  return getJson<NestLedgerStats>(`/ledger/stats?days=${days}`);
+export async function loadLedgerStats(
+  days = 7,
+  track?: string,
+): Promise<NestLedgerStats> {
+  const q = new URLSearchParams({ days: String(days) });
+  if (track) q.set("track", track);
+  return getJson<NestLedgerStats>(`/ledger/stats?${q}`);
 }
 
-export async function loadLedgerEquity(limit = 200): Promise<NestLedgerEquity> {
-  return getJson<NestLedgerEquity>(`/ledger/equity?limit=${limit}`);
+export async function loadLedgerEquity(
+  limit = 200,
+  track?: string,
+): Promise<NestLedgerEquity> {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (track) q.set("track", track);
+  return getJson<NestLedgerEquity>(`/ledger/equity?${q}`);
 }
 
 export async function loadLedgerEntry(id: string): Promise<NestLedgerEntryDetail> {

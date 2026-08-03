@@ -61,7 +61,16 @@ export function evaluateMarkets(
           ? (sim.p_over_4_5 ?? 0.5)
           : probTotalOver(sim.avg_total ?? 4.5, line);
       modelProb = market.side === 'over' ? pOver : 1 - pOver;
+    } else if (market.market === 'team_total') {
+      const line = market.line ?? 2.0;
+      const teamLam =
+        market.team === 'away'
+          ? (sim.expected_away_runs ?? sim.avg_away ?? 2)
+          : (sim.expected_home_runs ?? sim.avg_home ?? 2);
+      const pOver = probTotalOver(teamLam, line);
+      modelProb = market.side === 'over' ? pOver : 1 - pOver;
     } else if (market.market === 'runline') {
+      // Legacy ledger rows may still settle; not offered in new pick pools.
       modelProb =
         market.side === 'home'
           ? (sim.p_home_lead ?? 0)
@@ -75,6 +84,7 @@ export function evaluateMarkets(
       side: market.side,
       decimal_odds: market.decimal_odds,
       line: market.line ?? null,
+      team: market.team ?? null,
       implied_pct: implied * 100,
       model_prob: modelProb * 100,
       value_pct: valuePct(modelProb, implied),

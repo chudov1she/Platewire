@@ -10,7 +10,11 @@ import { aliasesForAbbr, namesMatch, normName } from './winline-aliases.js';
 import { WinlineDiscoveryService, type WinlineEventMeta } from './winline/discovery.service.js';
 import { WinlineHtmlMarketsService } from './winline/html-markets.service.js';
 import { buildEventPayload } from './winline/normalize.js';
-import { extractF5Markets } from './f5-extract.js';
+import {
+  extractF5Markets,
+  parseMainTeamTotalsJson,
+  toMainTeamTotalsJson,
+} from './f5-extract.js';
 import { orientF5ToMlbHome } from './orient-f5.js';
 import {
   completedInnings,
@@ -243,7 +247,7 @@ export class OddsService {
             totalsJson: extracted.totals,
             handicapsJson: extracted.handicaps,
             mainTotalJson: extracted.main_total ?? undefined,
-            mainHandicapJson: extracted.main_handicap ?? undefined,
+            mainHandicapJson: toMainTeamTotalsJson(extracted),
             ok: false,
             rawMarketCount: extracted.raw_f5_count,
             missingJson: extracted.missing,
@@ -257,7 +261,7 @@ export class OddsService {
             totalsJson: extracted.totals,
             handicapsJson: extracted.handicaps,
             mainTotalJson: extracted.main_total ?? undefined,
-            mainHandicapJson: extracted.main_handicap ?? undefined,
+            mainHandicapJson: toMainTeamTotalsJson(extracted),
             ok: false,
             rawMarketCount: extracted.raw_f5_count,
             missingJson: extracted.missing,
@@ -304,6 +308,7 @@ export class OddsService {
         handicaps: extracted.handicaps,
         main_total: extracted.main_total,
         main_handicap: extracted.main_handicap,
+        main_team_totals: toMainTeamTotalsJson(extracted),
         missing: extracted.missing,
         skipped: true,
         skip_reason: decision.reason,
@@ -335,7 +340,7 @@ export class OddsService {
         totalsJson: extracted.totals,
         handicapsJson: extracted.handicaps,
         mainTotalJson: extracted.main_total ?? undefined,
-        mainHandicapJson: extracted.main_handicap ?? undefined,
+        mainHandicapJson: toMainTeamTotalsJson(extracted),
         ok: extracted.ok,
         rawMarketCount: extracted.raw_f5_count,
         missingJson: extracted.missing,
@@ -349,7 +354,7 @@ export class OddsService {
         totalsJson: extracted.totals,
         handicapsJson: extracted.handicaps,
         mainTotalJson: extracted.main_total ?? undefined,
-        mainHandicapJson: extracted.main_handicap ?? undefined,
+        mainHandicapJson: toMainTeamTotalsJson(extracted),
         ok: extracted.ok,
         rawMarketCount: extracted.raw_f5_count,
         missingJson: extracted.missing,
@@ -478,7 +483,11 @@ export class OddsService {
       totals: snap.totalsJson,
       handicaps: snap.handicapsJson,
       main_total: snap.mainTotalJson,
-      main_handicap: snap.mainHandicapJson,
+      main_team_totals: parseMainTeamTotalsJson(snap.mainHandicapJson),
+      // Legacy handicap shape only (pre team_totals); new snaps store IT here.
+      main_handicap: parseMainTeamTotalsJson(snap.mainHandicapJson)
+        ? null
+        : snap.mainHandicapJson,
       missing: snap.missingJson ?? [],
       ...extra,
     };

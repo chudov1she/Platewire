@@ -3,12 +3,15 @@ import type {
   F5Handicap,
   F5Moneyline,
 } from './f5-extract.js';
+import { pickMainTotal } from './f5-extract.js';
 
 const MAIN_HCP_TARGET = -1.5;
+const MAIN_TEAM_TOTAL_TARGET = 2.0;
 
 /**
  * Winline П1/П2 → MLB home/away when bind flipped.
- * Totals unchanged. Handicap line negated with side swap.
+ * Match totals unchanged. Handicap line negated with side swap.
+ * Team totals: swap home/away ladders.
  */
 export function orientF5ToMlbHome(
   extracted: F5ExtractResult,
@@ -32,12 +35,22 @@ export function orientF5ToMlbHome(
     }))
     .sort((a, b) => a.line - b.line);
 
+  const teamHome = [...extracted.team_totals.away].sort(
+    (a, b) => a.line - b.line,
+  );
+  const teamAway = [...extracted.team_totals.home].sort(
+    (a, b) => a.line - b.line,
+  );
+
   return {
     ...extracted,
     moneyline,
     handicaps,
+    team_totals: { home: teamHome, away: teamAway },
     main_total: extracted.main_total,
     main_handicap: pickMainHandicap(handicaps),
+    main_team_total_home: pickMainTotal(teamHome, MAIN_TEAM_TOTAL_TARGET),
+    main_team_total_away: pickMainTotal(teamAway, MAIN_TEAM_TOTAL_TARGET),
   };
 }
 

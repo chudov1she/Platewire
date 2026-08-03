@@ -164,6 +164,8 @@ npm run dev
 
 Секреты (`.env`, `.env.docker`) в git не коммитятся.
 
+Обновление кода на сервере без смены схемы БД (дамп/restore безопасны): `git pull` + `docker compose --env-file .env.docker up -d --build`. Личные тоталы пишутся в существующий JSON snapshot — отдельных Prisma-миграций под них нет.
+
 ---
 
 ## API

@@ -11,8 +11,10 @@ export const ConfidenceTierSchema = z.enum(['low', 'medium', 'high']);
 
 export const AiDecisionOutputSchema = z.object({
   action: DecisionActionSchema,
-  market: z.enum(['moneyline', 'total', 'runline']).nullable(),
+  market: z.enum(['moneyline', 'total', 'team_total']).nullable(),
   side: z.string().nullable(),
+  /** Required for team_total: which club's IT. */
+  team: z.enum(['home', 'away']).nullable().optional(),
   line: z.number().nullable().optional(),
   confidence_tier: ConfidenceTierSchema.nullable(),
   risk_flags: z.array(z.string()).default([]),
@@ -43,6 +45,7 @@ export function validateDecisionAgainstAnalysis(
     roi_pct: number;
     model_prob: number;
     line?: number | null;
+    team?: 'home' | 'away' | null;
   }>,
 ): DecisionValidationResult {
   if (decision.action === 'pass') {
@@ -51,10 +54,14 @@ export function validateDecisionAgainstAnalysis(
   if (!decision.market || !decision.side || !decision.confidence_tier) {
     return { ok: false, reason: 'bet_missing_market_side_or_confidence' };
   }
+  if (decision.market === 'team_total' && !decision.team) {
+    return { ok: false, reason: 'team_total_missing_team' };
+  }
   const match = pool.find(
     (b) =>
       b.market === decision.market &&
       b.side.toLowerCase() === decision.side!.toLowerCase() &&
+      (decision.market !== 'team_total' || b.team === decision.team) &&
       (decision.line == null || b.line == null || Math.abs(b.line - decision.line) < 0.01),
   );
   if (!match) {

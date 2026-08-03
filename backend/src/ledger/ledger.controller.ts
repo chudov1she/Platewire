@@ -41,16 +41,19 @@ export class LedgerController {
 
   @Get('ledger/stats')
   @ApiOperation({ summary: 'Ledger performance stats (ROI, winrate, breakdowns)' })
-  stats(@Query('days') days?: string) {
+  stats(@Query('days') days?: string, @Query('track') track?: string) {
     const n = days ? Number(days) : 7;
-    return this.analytics.stats(Number.isFinite(n) ? n : 7);
+    return this.analytics.stats(Number.isFinite(n) ? n : 7, track || undefined);
   }
 
   @Get('ledger/equity')
   @ApiOperation({ summary: 'Chronological equity curve (running bankroll) for the analytics page' })
-  equity(@Query('limit') limit?: string) {
+  equity(@Query('limit') limit?: string, @Query('track') track?: string) {
     const n = limit ? Number(limit) : 200;
-    return this.analytics.equityCurve(Number.isFinite(n) ? n : 200);
+    return this.analytics.equityCurve(
+      Number.isFinite(n) ? n : 200,
+      track || undefined,
+    );
   }
 
   @Get('ledger/:id')

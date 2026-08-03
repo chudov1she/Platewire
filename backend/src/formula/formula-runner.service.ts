@@ -115,6 +115,8 @@ export class FormulaRunnerService {
     sim.p_tie = capProb(sim.p_tie!, params.prob_cap);
     sim.p_away_lead = capProb(sim.p_away_lead!, params.prob_cap);
     sim.p_over_4_5 = capProb(sim.p_over_4_5!, params.prob_cap);
+    sim.expected_home_runs = expectedHome;
+    sim.expected_away_runs = expectedAway;
 
     const valueRows = evaluateMarkets(sim, markets ?? [], {
       overround: params.overround,

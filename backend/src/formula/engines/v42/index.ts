@@ -234,6 +234,12 @@ export function analyzeMatchup(
     expectedAway = lambda_away * 5;
   }
 
+  sim = {
+    ...sim,
+    expected_home_runs: expectedHome,
+    expected_away_runs: expectedAway,
+  };
+
   const valueRows = evaluateMarkets(sim, markets ?? [], {
     overround: opts?.overround,
   });

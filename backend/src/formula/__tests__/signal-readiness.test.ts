@@ -63,6 +63,38 @@ describe('marketsComplete', () => {
       true,
     );
   });
+
+  it('complete with team_total pair alone', () => {
+    assert.equal(
+      marketsComplete([
+        {
+          market: 'team_total',
+          side: 'over',
+          team: 'home',
+          decimal_odds: 1.9,
+          line: 2.5,
+        },
+        {
+          market: 'team_total',
+          side: 'under',
+          team: 'home',
+          decimal_odds: 1.9,
+          line: 2.5,
+        },
+      ]),
+      true,
+    );
+  });
+
+  it('incomplete when only runline present', () => {
+    assert.equal(
+      marketsComplete([
+        { market: 'runline', side: 'home', decimal_odds: 2.0, line: -1.5 },
+        { market: 'runline', side: 'away', decimal_odds: 1.8, line: 1.5 },
+      ]),
+      false,
+    );
+  });
 });
 
 describe('signal-readiness', () => {

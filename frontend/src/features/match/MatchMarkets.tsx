@@ -201,17 +201,34 @@ export function MatchMarkets({
                   <p className="mt-2 text-[11px] text-muted-foreground">+{snapshot.totals.length - 1} доп. линий тотала</p>
                 ) : null}
               </MarketBlock>
-              <MarketBlock title="Фора F5">
-                <div className="grid grid-cols-3 gap-3">
-                  <Cell label={awayAbbr}>
-                    <Odds value={snapshot.main_handicap?.away} />
-                  </Cell>
-                  <Cell label={`Линия ${snapshot.main_handicap?.line ?? "—"}`}>
-                    <span className="font-mono text-sm">{snapshot.main_handicap?.line ?? "—"}</span>
-                  </Cell>
-                  <Cell label={homeAbbr}>
-                    <Odds value={snapshot.main_handicap?.home} />
-                  </Cell>
+              <MarketBlock title="ИТ команд F5">
+                <div className="grid gap-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <Cell label={`${awayAbbr} М`}>
+                      <Odds value={snapshot.main_team_totals?.away?.under} />
+                    </Cell>
+                    <Cell label={`${awayAbbr} ${snapshot.main_team_totals?.away?.line ?? "—"}`}>
+                      <span className="font-mono text-sm">
+                        {snapshot.main_team_totals?.away?.line ?? "—"}
+                      </span>
+                    </Cell>
+                    <Cell label={`${awayAbbr} Б`}>
+                      <Odds value={snapshot.main_team_totals?.away?.over} />
+                    </Cell>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <Cell label={`${homeAbbr} М`}>
+                      <Odds value={snapshot.main_team_totals?.home?.under} />
+                    </Cell>
+                    <Cell label={`${homeAbbr} ${snapshot.main_team_totals?.home?.line ?? "—"}`}>
+                      <span className="font-mono text-sm">
+                        {snapshot.main_team_totals?.home?.line ?? "—"}
+                      </span>
+                    </Cell>
+                    <Cell label={`${homeAbbr} Б`}>
+                      <Odds value={snapshot.main_team_totals?.home?.over} />
+                    </Cell>
+                  </div>
                 </div>
               </MarketBlock>
             </div>

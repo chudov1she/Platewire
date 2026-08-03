@@ -163,10 +163,11 @@ export function LedgerRoute() {
   const startingBankroll = stats?.startingBankroll ?? 1000;
 
   const reload = useCallback(async () => {
+    const trackParam = track === "all" ? undefined : track;
     const [rows, s, eq] = await Promise.all([
-      loadLedger({ track: track === "all" ? undefined : track, limit: 200 }),
-      loadLedgerStats(days),
-      loadLedgerEquity(2000),
+      loadLedger({ track: trackParam, limit: 200 }),
+      loadLedgerStats(days, trackParam),
+      loadLedgerEquity(2000, trackParam),
     ]);
     setEntries(rows);
     setStats(s);
@@ -233,7 +234,7 @@ export function LedgerRoute() {
   }
 
   const trackLabel =
-    track === "all" ? "Все" : (LEDGER_TRACKS.find((item) => item.id === track)?.label ?? track);
+    track === "all" ? "Все треки" : (LEDGER_TRACKS.find((item) => item.id === track)?.label ?? track);
 
   return (
     <section className="grid gap-4">
@@ -241,7 +242,9 @@ export function LedgerRoute() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{copy.ledger.title}</h1>
           <p className="mt-0.5 max-w-2xl text-sm text-muted-foreground">
-            Фиксированная ставка 50u · банк {startingBankroll}.
+            Сейчас: <span className="font-medium text-foreground">{trackLabel}</span>
+            {" · "}
+            {days} дн. · фиксированная ставка 50u · банк {startingBankroll}.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -311,22 +314,24 @@ export function LedgerRoute() {
 
       {!loading && stats ? (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Card className="border-border bg-card">
-            <CardHeader>
-              <CardTitle className="text-sm">По треку</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-1 text-sm">
-              {Object.entries(stats.byTrack).map(([t, v]) => (
-                <div className="flex justify-between" key={t}>
-                  <span className="text-muted-foreground">{t}</span>
-                  <span className="font-mono">
-                    {v.n} ставок · {v.profit.toFixed(1)}u
-                  </span>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-          <Card className="border-border bg-card">
+          {track === "all" ? (
+            <Card className="border-border bg-card">
+              <CardHeader>
+                <CardTitle className="text-sm">По треку</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-1 text-sm">
+                {Object.entries(stats.byTrack).map(([t, v]) => (
+                  <div className="flex justify-between" key={t}>
+                    <span className="text-muted-foreground">{t}</span>
+                    <span className="font-mono">
+                      {v.n} ставок · {v.profit.toFixed(1)}u
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
+          <Card className={cn("border-border bg-card", track !== "all" && "sm:col-span-2")}>
             <CardHeader>
               <CardTitle className="text-sm">По уверенности</CardTitle>
             </CardHeader>

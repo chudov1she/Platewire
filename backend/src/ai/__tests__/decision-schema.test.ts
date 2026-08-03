@@ -74,8 +74,9 @@ describe('decision-schema', () => {
   it('rejects a bet on a market/side that formula did not actually produce', () => {
     const decision = AiDecisionOutputSchema.parse({
       action: 'bet',
-      market: 'runline',
-      side: 'home',
+      market: 'team_total',
+      side: 'over',
+      team: 'home',
       confidence_tier: 'high',
       risk_flags: [],
       rationale: 'Hallucinated pick.',
@@ -83,6 +84,35 @@ describe('decision-schema', () => {
     });
     const result = validateDecisionAgainstAnalysis(decision, pool);
     assert.equal(result.ok, false);
+  });
+
+  it('validates team_total when team+side+line match the pool', () => {
+    const ttPool = [
+      ...pool,
+      {
+        market: 'team_total',
+        side: 'over',
+        team: 'away' as const,
+        decimal_odds: 1.9,
+        value_pct: 18,
+        roi_pct: 10,
+        model_prob: 58,
+        line: 2.5,
+      },
+    ];
+    const decision = AiDecisionOutputSchema.parse({
+      action: 'bet',
+      market: 'team_total',
+      side: 'over',
+      team: 'away',
+      line: 2.5,
+      confidence_tier: 'medium',
+      risk_flags: [],
+      rationale: 'Away IT edge.',
+      notify_brief: 'ИТ гостей овер.',
+    });
+    const result = validateDecisionAgainstAnalysis(decision, ttPool);
+    assert.equal(result.ok, true);
   });
 
   it('requires notify_brief', () => {

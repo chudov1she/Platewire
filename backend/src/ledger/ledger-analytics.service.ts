@@ -66,11 +66,15 @@ export class LedgerAnalyticsService {
     return this.serialize(row);
   }
 
-  async stats(days = 7) {
+  async stats(days = 7, track?: string) {
     const since = new Date();
     since.setUTCDate(since.getUTCDate() - Math.max(1, days));
     const rows = await this.prisma.f5LedgerEntry.findMany({
-      where: { capturedAt: { gte: since }, excludedFromStats: false },
+      where: {
+        capturedAt: { gte: since },
+        excludedFromStats: false,
+        ...(track ? { track } : {}),
+      },
     });
 
     const decided = rows.filter((r) =>
@@ -115,6 +119,7 @@ export class LedgerAnalyticsService {
 
     return {
       days,
+      track: track ?? null,
       total: rows.length,
       pending,
       passed,
@@ -136,12 +141,13 @@ export class LedgerAnalyticsService {
    * Chronological equity curve: one point per settled bet (action=bet),
    * accumulating profitUnits from STARTING_BANKROLL_POINTS.
    */
-  async equityCurve(limit = 500) {
+  async equityCurve(limit = 500, track?: string) {
     const rows = await this.prisma.f5LedgerEntry.findMany({
       where: {
         action: 'bet',
         excludedFromStats: false,
         resultStatus: { in: ['win', 'loss', 'push'] },
+        ...(track ? { track } : {}),
       },
       orderBy: [{ settledAt: 'asc' }, { capturedAt: 'asc' }],
       take: Math.min(2000, Math.max(1, limit)),
@@ -176,7 +182,11 @@ export class LedgerAnalyticsService {
       };
     });
 
-    return { startingBankroll: STARTING_BANKROLL_POINTS, points };
+    return {
+      startingBankroll: STARTING_BANKROLL_POINTS,
+      track: track ?? null,
+      points,
+    };
   }
 
   private serialize(row: {
@@ -272,6 +282,14 @@ export function pickLabelForEntry(opts: {
   if (market === 'total') {
     const ln = opts.line ?? 4.5;
     return side === 'over' ? `Over ${ln}` : `Under ${ln}`;
+  }
+  if (market === 'team_total') {
+    const encoded = /^(home|away)_(over|under)$/.exec(side);
+    const team = encoded?.[1] ?? '';
+    const ou = encoded?.[2] ?? side;
+    const abbr = team === 'away' ? opts.awayAbbr : opts.homeAbbr;
+    const ln = opts.line ?? 2;
+    return `${abbr} ${ou === 'under' ? 'Under' : 'Over'} ${ln}`;
   }
   if (market === 'runline' || market === 'handicap') {
     const ln = opts.line ?? -1.5;

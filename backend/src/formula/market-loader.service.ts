@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { isF5OddsStage, type F5OddsStage } from '../odds/f5-scope.js';
+import { parseMainTeamTotalsJson } from '../odds/f5-extract.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { MarketLine } from './formula.types.js';
 
@@ -13,7 +14,7 @@ export type MarketLoadResult = {
   stale: boolean;
 };
 
-/** At least one complete market family (ML pair, total O/U, or runline pair). */
+/** At least one complete market family (ML, match O/U, or team_total O/U). */
 export function marketsComplete(lines: MarketLine[]): boolean {
   const mlHome = lines.some(
     (l) => l.market === 'moneyline' && l.side === 'home',
@@ -27,9 +28,27 @@ export function marketsComplete(lines: MarketLine[]): boolean {
   const under = lines.some((l) => l.market === 'total' && l.side === 'under');
   if (over && under) return true;
 
-  const rlHome = lines.some((l) => l.market === 'runline' && l.side === 'home');
-  const rlAway = lines.some((l) => l.market === 'runline' && l.side === 'away');
-  if (rlHome && rlAway) return true;
+  const homeTt =
+    lines.some(
+      (l) =>
+        l.market === 'team_total' && l.team === 'home' && l.side === 'over',
+    ) &&
+    lines.some(
+      (l) =>
+        l.market === 'team_total' && l.team === 'home' && l.side === 'under',
+    );
+  if (homeTt) return true;
+
+  const awayTt =
+    lines.some(
+      (l) =>
+        l.market === 'team_total' && l.team === 'away' && l.side === 'over',
+    ) &&
+    lines.some(
+      (l) =>
+        l.market === 'team_total' && l.team === 'away' && l.side === 'under',
+    );
+  if (awayTt) return true;
 
   return false;
 }
@@ -53,7 +72,28 @@ function pushIfSane(out: MarketLine[], line: MarketLine): void {
 
 type F5MoneylineJson = { home: number; away: number; draw: number | null };
 type F5TotalJson = { line: number; over: number; under: number };
-type F5HandicapJson = { line: number; home: number | null; away: number | null };
+
+function pushTeamTotal(
+  out: MarketLine[],
+  team: 'home' | 'away',
+  total: F5TotalJson | null | undefined,
+): void {
+  if (!total) return;
+  pushIfSane(out, {
+    market: 'team_total',
+    side: 'over',
+    decimal_odds: total.over,
+    line: total.line,
+    team,
+  });
+  pushIfSane(out, {
+    market: 'team_total',
+    side: 'under',
+    decimal_odds: total.under,
+    line: total.line,
+    team,
+  });
+}
 
 function snapshotToLines(snap: {
   moneylineJson: unknown;
@@ -84,25 +124,14 @@ function snapshotToLines(snap: {
       line: total.line,
     });
   }
-  const hcp = snap.mainHandicapJson as F5HandicapJson | null;
-  if (hcp) {
-    if (hcp.home != null) {
-      pushIfSane(out, {
-        market: 'runline',
-        side: 'home',
-        decimal_odds: hcp.home,
-        line: hcp.line,
-      });
-    }
-    if (hcp.away != null) {
-      pushIfSane(out, {
-        market: 'runline',
-        side: 'away',
-        decimal_odds: hcp.away,
-        line: -hcp.line,
-      });
-    }
+
+  // New format: team IT in mainHandicapJson. Legacy handicap → ignored (no runline).
+  const teamTotals = parseMainTeamTotalsJson(snap.mainHandicapJson);
+  if (teamTotals) {
+    pushTeamTotal(out, 'home', teamTotals.home);
+    pushTeamTotal(out, 'away', teamTotals.away);
   }
+
   return out;
 }
 

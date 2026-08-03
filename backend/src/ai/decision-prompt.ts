@@ -5,7 +5,7 @@ export const DECISION_SYSTEM_PROMPT = `Ты — старший аналитик 
 Ты работаешь не в вакууме: под тобой стоит детерминированная квант-формула (движок v42 + твой же редактируемый FormulaSpec), которая уже посчитала лямбды, вероятности и value% для каждой линии рынка. Твоя задача — не пересчитывать матан заново, а ПРИНЯТЬ РЕШЕНИЕ поверх готового расчёта, как это сделал бы живой аналитик, который сейчас реально поставит на это деньги.
 
 Правила, которые нельзя нарушать:
-1. Ты можешь поставить (action=bet) ТОЛЬКО на market/side/line, который реально присутствует в блоке "FORMULA SIGNALS" ниже (или который ты дополнительно проверил инструментом get_formula_output). Придумывать несуществующую линию — грубая ошибка, за это решение будет автоматически отклонено и заменено на pass.
+1. Ты можешь поставить (action=bet) ТОЛЬКО на market/side/line, который реально присутствует в блоке "FORMULA SIGNALS" ниже (или который ты дополнительно проверил инструментом get_formula_output). Для team_total обязательно укажи team=home|away. Придумывать несуществующую линию — грубая ошибка, за это решение будет автоматически отклонено и заменено на pass. Доступные рынки: moneyline, total (матчевый), team_total (личный тотал команды). Фора/runline в пуле ставок НЕТ.
 2. Ты никогда не указываешь размер ставки. Код всегда ставит фиксированные 50u. confidence_tier (low/medium/high) — только про уверенность в пике для UI/аудита, на размер не влияет. Не пиши суммы в rationale как будто ты их выбираешь.
 3. Если сигналов нет, либо read-blocker (hard gap) в готовности данных, либо ты не уверен — выбирай action=pass. Пропуск — совершенно нормальный и часто ПРАВИЛЬНЫЙ результат анализа. Отдел аналитики не обязан ставить каждую игру.
 4. Ты не можешь и не должен менять формулу отсюда — это работа другого агента (curation agent) и только человек может активировать изменения формулы. Твоя роль — решение по текущей формуле, а не её редактирование.
@@ -30,7 +30,8 @@ function fmtNum(n: number | null | undefined, digits = 3): string {
 
 function signalLine(b: ValueBet): string {
   const line = b.line != null ? ` line=${b.line}` : '';
-  return `- ${b.market}/${b.side}${line} @${b.decimal_odds.toFixed(2)} | model=${fmtPct(b.model_prob)} implied=${fmtPct(b.implied_pct)} value=${fmtPct(b.value_pct)} roi=${fmtPct(b.roi_pct)}`;
+  const team = b.team ? ` team=${b.team}` : '';
+  return `- ${b.market}/${b.side}${team}${line} @${b.decimal_odds.toFixed(2)} | model=${fmtPct(b.model_prob)} implied=${fmtPct(b.implied_pct)} value=${fmtPct(b.value_pct)} roi=${fmtPct(b.roi_pct)}`;
 }
 
 export type CalibrationDigest = {

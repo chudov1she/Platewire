@@ -32,6 +32,15 @@ export function tgMarketLabel(
     const suffix = s === 'over' ? 'Б' : 'М';
     return `Т ${trimNum(line)} ${suffix}`;
   }
+  if (m === 'team_total') {
+    const encoded = /^(home|away)_(over|under)$/.exec(s);
+    const team = encoded?.[1] ?? '';
+    const ou = encoded?.[2] ?? s;
+    const abbr = team === 'away' ? awayAbbr : homeAbbr;
+    const line = bet.line ?? 2;
+    const suffix = ou === 'under' ? 'М' : 'Б';
+    return `ИТ ${abbr} ${trimNum(line)} ${suffix}`;
+  }
   if (m === 'runline' || m === 'handicap') {
     const side = s === 'home' ? homeAbbr : awayAbbr;
     const line = bet.line ?? 1.5;

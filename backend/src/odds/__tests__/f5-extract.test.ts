@@ -76,7 +76,7 @@ describe('extractF5Markets', () => {
     }),
   ];
 
-  it('extracts after_5 ML, match totals, handicaps and main lines', () => {
+  it('extracts after_5 ML, match totals, handicaps, team totals and main lines', () => {
     const r = extractF5Markets(fixture);
     assert.equal(r.ok, true);
     assert.deepEqual(r.moneyline, { home: 2.01, draw: 5.8, away: 2.5 });
@@ -88,12 +88,19 @@ describe('extractF5Markets', () => {
       home: 2.62,
       away: 1.41,
     });
-    assert.deepEqual(r.missing, []);
+    assert.equal(r.team_totals.home.length, 1);
+    assert.deepEqual(r.main_team_total_home, {
+      line: 2.5,
+      over: 1.9,
+      under: 1.9,
+    });
+    assert.ok(!r.missing.includes('team_total'));
   });
 
-  it('excludes team totals from match totals', () => {
+  it('excludes team totals from match totals but keeps them separately', () => {
     const r = extractF5Markets(fixture);
     assert.ok(!r.totals.some((t) => t.line === 2.5));
+    assert.ok(r.team_totals.home.some((t) => t.line === 2.5));
   });
 
   it('ok=false when moneyline missing', () => {

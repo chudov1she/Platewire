@@ -17,12 +17,13 @@ export function settleBetResult(opts: {
   market: string | null | undefined;
   side: string | null | undefined;
   line?: number | null;
+  team?: string | null;
   f5Home: number;
   f5Away: number;
 }): SettleResult {
   if (!opts.market || !opts.side) return 'PENDING';
   const market = opts.market.toLowerCase();
-  const side = opts.side.toLowerCase();
+  let side = opts.side.toLowerCase();
 
   if (market === 'moneyline') {
     const outcome = actualF5Outcome(opts.f5Home, opts.f5Away);
@@ -44,6 +45,27 @@ export function settleBetResult(opts: {
     }
     if (side === 'over') return total > lineVal ? 'WIN' : 'LOSE';
     if (side === 'under') return total < lineVal ? 'WIN' : 'LOSE';
+  }
+
+  if (market === 'team_total') {
+    let team = (opts.team ?? '').toLowerCase();
+    const encoded = /^(home|away)_(over|under)$/.exec(side);
+    if (encoded) {
+      team = encoded[1]!;
+      side = encoded[2]!;
+    }
+    const runs =
+      team === 'away' ? opts.f5Away : team === 'home' ? opts.f5Home : null;
+    if (runs == null) return 'PENDING';
+    const lineVal = opts.line ?? 2.0;
+    if (
+      Math.abs(lineVal - Math.round(lineVal)) < 0.01 &&
+      Math.abs(runs - lineVal) < 0.01
+    ) {
+      return 'PUSH';
+    }
+    if (side === 'over') return runs > lineVal ? 'WIN' : 'LOSE';
+    if (side === 'under') return runs < lineVal ? 'WIN' : 'LOSE';
   }
 
   if (market === 'runline') {
@@ -103,6 +125,14 @@ export function marketLabel(
   if (m === 'total') {
     const ln = line ?? 4.5;
     return s === 'over' ? `Over ${ln}` : `Under ${ln}`;
+  }
+  if (m === 'team_total') {
+    const encoded = /^(home|away)_(over|under)$/.exec(s);
+    const team = encoded?.[1] ?? '';
+    const ou = encoded?.[2] ?? s;
+    const abbr = team === 'away' ? awayAbbr : homeAbbr;
+    const ln = line ?? 2;
+    return `${abbr} ${ou === 'under' ? 'Under' : 'Over'} ${ln}`;
   }
   if (m === 'runline') {
     const ln = line ?? -1.5;

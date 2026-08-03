@@ -362,6 +362,11 @@ export type NestF5Snapshot = {
   handicaps: NestF5Handicap[];
   main_total: NestF5Total | null;
   main_handicap: NestF5Handicap | null;
+  main_team_totals: {
+    kind: "team_totals";
+    home: NestF5Total | null;
+    away: NestF5Total | null;
+  } | null;
   missing: string[];
   skipped?: boolean;
   skip_reason?: string;
@@ -551,6 +556,7 @@ export type NestLedgerEntryDetail = NestLedgerEntry & {
 
 export type NestLedgerStats = {
   days: number;
+  track?: string | null;
   total: number;
   pending: number;
   passed: number;
@@ -576,6 +582,7 @@ export type NestLedgerStats = {
 
 export type NestLedgerEquity = {
   startingBankroll: number;
+  track?: string | null;
   points: Array<{
     id: string;
     n: number;

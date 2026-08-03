@@ -88,10 +88,12 @@ export type MatchupInputs = {
 };
 
 export type MarketLine = {
-  market: 'moneyline' | 'total' | 'runline' | string;
+  market: 'moneyline' | 'total' | 'runline' | 'team_total' | string;
   side: string;
   decimal_odds: number;
   line?: number | null;
+  /** For team_total: which club's runs. */
+  team?: 'home' | 'away' | null;
 };
 
 export type ValueBet = {
@@ -103,6 +105,7 @@ export type ValueBet = {
   value_pct: number;
   roi_pct: number;
   line?: number | null;
+  team?: 'home' | 'away' | null;
 };
 
 export type After5Analysis = {
