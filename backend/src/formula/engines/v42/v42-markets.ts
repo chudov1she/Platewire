@@ -61,21 +61,8 @@ export function evaluateMarkets(
           ? (sim.p_over_4_5 ?? 0.5)
           : probTotalOver(sim.avg_total ?? 4.5, line);
       modelProb = market.side === 'over' ? pOver : 1 - pOver;
-    } else if (market.market === 'team_total') {
-      const line = market.line ?? 2.0;
-      const teamLam =
-        market.team === 'away'
-          ? (sim.expected_away_runs ?? sim.avg_away ?? 2)
-          : (sim.expected_home_runs ?? sim.avg_home ?? 2);
-      const pOver = probTotalOver(teamLam, line);
-      modelProb = market.side === 'over' ? pOver : 1 - pOver;
-    } else if (market.market === 'runline') {
-      // Legacy ledger rows may still settle; not offered in new pick pools.
-      modelProb =
-        market.side === 'home'
-          ? (sim.p_home_lead ?? 0)
-          : (sim.p_away_lead ?? 0);
     } else {
+      // Only moneyline + match total enter the bet pool (no team_total / runline / props).
       continue;
     }
     const implied = impliedProb(market.decimal_odds, overround);

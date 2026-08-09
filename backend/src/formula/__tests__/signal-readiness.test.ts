@@ -64,7 +64,7 @@ describe('marketsComplete', () => {
     );
   });
 
-  it('complete with team_total pair alone', () => {
+  it('team_total alone is NOT complete (only ML / match total allowed)', () => {
     assert.equal(
       marketsComplete([
         {
@@ -82,7 +82,7 @@ describe('marketsComplete', () => {
           line: 2.5,
         },
       ]),
-      true,
+      false,
     );
   });
 

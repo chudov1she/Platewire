@@ -17,6 +17,9 @@ import type {
   LedgerSettleGameResponse,
   NestAgentChatMessage,
   NestAgentProposal,
+  AgentProposalApplyResult,
+  AgentProposalMetrics,
+  AgentProposalPreview,
   NestF5Snapshot,
   NestF5Tracks,
   NestFormulaEval,
@@ -47,6 +50,32 @@ export class ApiError extends Error {
     this.status = status;
     this.body = body;
   }
+}
+
+function formatApiErrorMessage(body: unknown, fallback: string): string {
+  if (!body || typeof body !== "object") return fallback || "Request failed";
+  const rec = body as { message?: unknown; errors?: unknown };
+  const errors = Array.isArray(rec.errors)
+    ? rec.errors.filter((e): e is string => typeof e === "string")
+    : [];
+  let message = "";
+  if (typeof rec.message === "string") message = rec.message;
+  else if (Array.isArray(rec.message)) {
+    message = rec.message.filter((m): m is string => typeof m === "string").join("; ");
+  } else if (rec.message && typeof rec.message === "object") {
+    const nested = rec.message as { message?: unknown; errors?: unknown };
+    if (typeof nested.message === "string") message = nested.message;
+    if (Array.isArray(nested.errors)) {
+      errors.push(
+        ...nested.errors.filter((e): e is string => typeof e === "string"),
+      );
+    }
+  }
+  if (errors.length) {
+    const detail = errors.join("; ");
+    return message ? `${message}: ${detail}` : detail;
+  }
+  return message || fallback || "Request failed";
 }
 
 function apiUrl(path: string) {
@@ -88,11 +117,7 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
   const body = await parseJson(res);
   if (!res.ok) {
     if (res.status === 401) setAccessToken(null);
-    const msg =
-      typeof body === "object" && body && "message" in body
-        ? String((body as { message: unknown }).message)
-        : res.statusText;
-    throw new ApiError(msg || "Request failed", res.status, body);
+    throw new ApiError(formatApiErrorMessage(body, res.statusText), res.status, body);
   }
   return body as T;
 }
@@ -300,6 +325,28 @@ export async function validateFormulaSpec(spec: unknown): Promise<{ ok: boolean;
   return postJson(`/formula/validate`, { spec });
 }
 
+export type FormulaBacktestResult = {
+  baseline: AgentProposalMetrics;
+  proposed: AgentProposalMetrics;
+  baselineVersionId: string;
+  baselineVersionLabel: string;
+  candidateLabel: string;
+  candidateVersionId: string | null;
+  resolvedSpec: FormulaSpec;
+  sample: number;
+};
+
+export async function backtestFormula(body: {
+  days?: number;
+  track?: string;
+  versionId?: string;
+  spec?: FormulaSpec;
+  patch?: Record<string, unknown>;
+  fromVersionId?: string;
+}): Promise<FormulaBacktestResult> {
+  return postJson<FormulaBacktestResult>("/ledger/backtest-formula", body);
+}
+
 // ——— Ledger ———
 
 export async function loadLedger(params?: { track?: string; status?: string; action?: string; limit?: number }): Promise<NestLedgerEntry[]> {
@@ -370,8 +417,19 @@ export async function loadAgentProposal(id: string): Promise<NestAgentProposal> 
   return getJson<NestAgentProposal>(`/agent/proposals/${id}`);
 }
 
-export async function applyAgentProposal(id: string): Promise<NestAgentProposal> {
-  return postJson<NestAgentProposal>(`/agent/proposals/${id}/apply`);
+export async function previewAgentProposal(
+  id: string,
+  opts?: { days?: number; track?: string },
+): Promise<AgentProposalPreview> {
+  const q = new URLSearchParams();
+  if (opts?.days) q.set("days", String(opts.days));
+  if (opts?.track) q.set("track", opts.track);
+  const qs = q.toString();
+  return getJson<AgentProposalPreview>(`/agent/proposals/${id}/preview${qs ? `?${qs}` : ""}`);
+}
+
+export async function applyAgentProposal(id: string): Promise<AgentProposalApplyResult> {
+  return postJson<AgentProposalApplyResult>(`/agent/proposals/${id}/apply`);
 }
 
 export async function rejectAgentProposal(id: string): Promise<NestAgentProposal> {

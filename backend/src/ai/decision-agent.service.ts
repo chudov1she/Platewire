@@ -15,6 +15,7 @@ import { buildDecisionBrief, DECISION_SYSTEM_PROMPT } from './decision-prompt.js
 import { buildDecisionTools, type CapturedDecision } from './decision-tools.js';
 import {
   AiDecisionOutputSchema,
+  ALLOWED_BET_MARKETS,
   validateDecisionAgainstAnalysis,
   type AiDecisionOutput,
 } from './decision-schema.js';
@@ -89,7 +90,9 @@ export class DecisionAgentService {
       context: built.context,
     });
     const analysis = this.runner.analyze(built.inputs, marketLoad.markets, production.spec);
-    const pool = [...analysis.signals, ...analysis.value_bets];
+    const pool = [...analysis.signals, ...analysis.value_bets].filter((b) =>
+      ALLOWED_BET_MARKETS.has(b.market),
+    );
 
     if (!gate.ready) {
       const decision = FAIL_SAFE_PASS(

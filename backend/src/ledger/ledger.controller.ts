@@ -12,8 +12,13 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserStatus } from '../generated/prisma/client.js';
 import { Statuses } from '../common/index.js';
-import { CaptureDecisionDto, PatchLedgerEntryDto } from './dto/ledger.dto.js';
+import {
+  CaptureDecisionDto,
+  FormulaBacktestDto,
+  PatchLedgerEntryDto,
+} from './dto/ledger.dto.js';
 import { LedgerAnalyticsService } from './ledger-analytics.service.js';
+import { LedgerBacktestService } from './ledger-backtest.service.js';
 import { LedgerCaptureService } from './ledger-capture.service.js';
 import { LedgerSettleService } from './ledger-settle.service.js';
 
@@ -25,6 +30,7 @@ export class LedgerController {
     private readonly capture: LedgerCaptureService,
     private readonly analytics: LedgerAnalyticsService,
     private readonly settle: LedgerSettleService,
+    private readonly backtest: LedgerBacktestService,
   ) {}
 
   @Get('ledger')
@@ -54,6 +60,16 @@ export class LedgerController {
       Number.isFinite(n) ? n : 200,
       track || undefined,
     );
+  }
+
+  @Post('ledger/backtest-formula')
+  @Statuses(UserStatus.ADMIN)
+  @ApiOperation({
+    summary:
+      'Replay settled ledger picks: production baseline vs versionId / inline spec / patch',
+  })
+  backtestFormula(@Body() body: FormulaBacktestDto) {
+    return this.backtest.compareCandidate(body);
   }
 
   @Get('ledger/:id')

@@ -172,8 +172,12 @@ export class FormulaRunnerService {
     const env: Record<string, number> = {};
     for (const item of registryCatalog()) env[item.name] = 1;
 
+    // Derived vars must be merged into env before lambda_* checks — otherwise
+    // patches that introduce fip_*/barrel_* (etc.) fail with "Unknown variable"
+    // even though evaluateDerived would resolve them at runtime.
+    let envWithDerived = env;
     try {
-      evaluateDerived(spec.derived, env);
+      envWithDerived = evaluateDerived(spec.derived, env);
     } catch (err) {
       errors.push(err instanceof Error ? err.message : String(err));
     }
@@ -182,7 +186,7 @@ export class FormulaRunnerService {
       ['lambda_away_mult', spec.lambda_away_mult],
     ] as const) {
       try {
-        evaluateExpression(expr, env);
+        evaluateExpression(expr, envWithDerived);
       } catch (err) {
         errors.push(
           `${label}: ${err instanceof Error ? err.message : String(err)}`,

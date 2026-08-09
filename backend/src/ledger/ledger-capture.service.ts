@@ -295,11 +295,7 @@ export class LedgerCaptureService {
       pickMarket:
         result.decision.action === 'bet' ? result.decision.market : null,
       pickSide:
-        result.decision.action === 'bet'
-          ? result.decision.market === 'team_total' && result.decision.team
-            ? `${result.decision.team}_${result.decision.side}`
-            : result.decision.side
-          : null,
+        result.decision.action === 'bet' ? result.decision.side : null,
       pickLine: result.matched?.line ?? null,
       decimalOdds: result.matched?.decimal_odds ?? null,
       modelProb: result.matched?.model_prob ?? null,

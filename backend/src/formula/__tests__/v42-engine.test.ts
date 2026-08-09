@@ -94,4 +94,22 @@ describe('formula runner overlay', () => {
     );
     assert.ok(errors.length >= 1);
   });
+
+  it('validate accepts lambda expressions that reference derived keys', () => {
+    const errors = runner.validate(
+      patchFormulaSpec(defaultFormulaSpec(), {
+        derived: {
+          fip_home_adj: 'away_sp_fip / 4.0',
+          fip_away_adj: 'home_sp_fip / 4.0',
+          barrel_home_adj: 'home_barrel_pct / 7.5',
+          barrel_away_adj: 'away_barrel_pct / 7.5',
+        },
+        lambda_home_mult:
+          'fip_home_adj * barrel_home_adj * weather_factor * park_time',
+        lambda_away_mult:
+          'fip_away_adj * barrel_away_adj * weather_factor * park_time',
+      }),
+    );
+    assert.deepEqual(errors, []);
+  });
 });

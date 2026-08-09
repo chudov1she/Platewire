@@ -633,6 +633,28 @@ export type NestAgentProposal = {
   appliedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** True when proposal baseline no longer matches current production. */
+  baselineStale?: boolean;
+};
+
+export type AgentProposalPreview = {
+  proposal: NestAgentProposal;
+  productionVersionId: string;
+  productionVersionLabel: string;
+  baselineStale: boolean;
+  validationErrors: string[];
+  resolvedSpec: FormulaSpec;
+  liveBacktest: {
+    baseline: AgentProposalMetrics;
+    proposed: AgentProposalMetrics;
+    sample: number;
+    baselineVersionId: string;
+    baselineVersionLabel: string;
+  } | null;
+};
+
+export type AgentProposalApplyResult = NestAgentProposal & {
+  createdVersion?: FormulaVersionDetail;
 };
 
 export type AgentCurationRunResponse = { message: string; toolsUsed: string[] };

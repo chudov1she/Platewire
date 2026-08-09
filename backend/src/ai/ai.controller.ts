@@ -35,6 +35,25 @@ export class AiController {
     return this.proposals.getOne(id);
   }
 
+  @Get('proposals/:id/preview')
+  @Statuses(UserStatus.ADMIN)
+  @ApiOperation({
+    summary:
+      'Preview resolved spec + live ledger backtest against current production before apply',
+  })
+  previewProposal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('days') days?: string,
+    @Query('track') track?: string,
+  ) {
+    const n = days ? Number(days) : 14;
+    return this.proposals.preview(id, {
+      days: Number.isFinite(n) ? n : 14,
+      track: track || undefined,
+      liveBacktest: true,
+    });
+  }
+
   @Post('proposals/:id/reject')
   @Statuses(UserStatus.ADMIN)
   @ApiOperation({ summary: 'Reject a proposal' })
@@ -45,7 +64,8 @@ export class AiController {
   @Post('proposals/:id/apply')
   @Statuses(UserStatus.ADMIN)
   @ApiOperation({
-    summary: 'Human-only: create + activate a FormulaVersion from a proposal',
+    summary:
+      'Human-only: patch current production with the proposal, create + activate FormulaVersion',
   })
   apply(@Param('id', ParseUUIDPipe) id: string) {
     return this.proposals.apply(id);

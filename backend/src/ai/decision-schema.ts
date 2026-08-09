@@ -5,15 +5,17 @@ import { z } from 'zod';
  * Anything that fails this schema (or the cross-checks in
  * `validateDecisionAgainstAnalysis`) is discarded and the ledger records a
  * safe PASS instead — the agent never gets to bet on a hallucinated market.
+ *
+ * Allowed bet markets (hard product rule): F5 moneyline + F5 match total ONLY.
  */
 export const DecisionActionSchema = z.enum(['bet', 'pass']);
 export const ConfidenceTierSchema = z.enum(['low', 'medium', 'high']);
 
 export const AiDecisionOutputSchema = z.object({
   action: DecisionActionSchema,
-  market: z.enum(['moneyline', 'total', 'team_total']).nullable(),
+  market: z.enum(['moneyline', 'total']).nullable(),
   side: z.string().nullable(),
-  /** Required for team_total: which club's IT. */
+  /** Unused for current markets; kept optional for forward-compat / older traces. */
   team: z.enum(['home', 'away']).nullable().optional(),
   line: z.number().nullable().optional(),
   confidence_tier: ConfidenceTierSchema.nullable(),
@@ -28,6 +30,9 @@ export type AiDecisionOutput = z.infer<typeof AiDecisionOutputSchema>;
 export type DecisionValidationResult =
   | { ok: true; matched: { decimal_odds: number; value_pct: number; roi_pct: number; model_prob: number; line: number | null } }
   | { ok: false; reason: string };
+
+/** Only these markets may enter the decision / ledger bet pool. */
+export const ALLOWED_BET_MARKETS = new Set(['moneyline', 'total']);
 
 /**
  * Cross-checks the AI's chosen market/side/line against the FRESH formula
@@ -54,14 +59,14 @@ export function validateDecisionAgainstAnalysis(
   if (!decision.market || !decision.side || !decision.confidence_tier) {
     return { ok: false, reason: 'bet_missing_market_side_or_confidence' };
   }
-  if (decision.market === 'team_total' && !decision.team) {
-    return { ok: false, reason: 'team_total_missing_team' };
+  if (!ALLOWED_BET_MARKETS.has(decision.market)) {
+    return { ok: false, reason: 'forbidden_market' };
   }
-  const match = pool.find(
+  const allowedPool = pool.filter((b) => ALLOWED_BET_MARKETS.has(b.market));
+  const match = allowedPool.find(
     (b) =>
       b.market === decision.market &&
       b.side.toLowerCase() === decision.side!.toLowerCase() &&
-      (decision.market !== 'team_total' || b.team === decision.team) &&
       (decision.line == null || b.line == null || Math.abs(b.line - decision.line) < 0.01),
   );
   if (!match) {

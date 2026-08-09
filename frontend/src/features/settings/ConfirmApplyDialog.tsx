@@ -20,6 +20,7 @@ export function ConfirmApplyDialog({
   confirmLabel = "Применить",
   cancelLabel = "Отмена",
   pending = false,
+  confirmDisabled = false,
   destructive = false,
   children,
   onConfirm,
@@ -31,6 +32,7 @@ export function ConfirmApplyDialog({
   confirmLabel?: string;
   cancelLabel?: string;
   pending?: boolean;
+  confirmDisabled?: boolean;
   destructive?: boolean;
   children?: ReactNode;
   onConfirm: () => void | Promise<void>;
@@ -46,7 +48,7 @@ export function ConfirmApplyDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction
-            disabled={pending}
+            disabled={pending || confirmDisabled}
             onClick={(event) => {
               event.preventDefault();
               void onConfirm();

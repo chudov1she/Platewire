@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { FormulaRunnerService } from '../formula/formula-runner.service.js';
 import { FormulaStoreService } from '../formula/formula-store.service.js';
@@ -37,6 +37,83 @@ export class LedgerBacktestService {
     baselineVersionLabel: string;
     sample: number;
   }> {
+    const production = await this.store.getProduction();
+    const proposedSpec = patchFormulaSpec(production.spec, patch);
+    return this.compareAgainstProduction(proposedSpec, {
+      ...opts,
+    });
+  }
+
+  /**
+   * Replay settled ledger picks: production baseline vs an explicit candidate
+   * (version id, inline spec, or patch on top of fromVersionId/production).
+   */
+  async compareCandidate(opts: {
+    days?: number;
+    track?: string;
+    versionId?: string;
+    spec?: unknown;
+    patch?: Record<string, unknown>;
+    fromVersionId?: string;
+  }): Promise<{
+    baseline: Record<string, number>;
+    proposed: Record<string, number>;
+    baselineVersionId: string;
+    baselineVersionLabel: string;
+    candidateLabel: string;
+    candidateVersionId: string | null;
+    resolvedSpec: FormulaSpec;
+    sample: number;
+  }> {
+    const production = await this.store.getProduction();
+    let proposedSpec = production.spec;
+    let candidateLabel = production.versionLabel;
+    let candidateVersionId: string | null = null;
+
+    if (opts.versionId) {
+      const version = await this.store.getVersion(opts.versionId);
+      proposedSpec = version.spec;
+      candidateLabel = version.versionLabel;
+      candidateVersionId = version.id;
+    } else if (opts.spec != null) {
+      proposedSpec = normalizeFormulaSpec(opts.spec);
+      candidateLabel = proposedSpec.version || 'inline-spec';
+    } else if (opts.patch) {
+      let baseSpec = production.spec;
+      if (opts.fromVersionId) {
+        const from = await this.store.getVersion(opts.fromVersionId);
+        baseSpec = from.spec;
+      }
+      proposedSpec = patchFormulaSpec(baseSpec, opts.patch);
+      candidateLabel = `${opts.fromVersionId ? 'from-version' : production.versionLabel}+patch`;
+    } else {
+      throw new NotFoundException(
+        'Provide versionId, spec, or patch for formula backtest',
+      );
+    }
+
+    const compared = await this.compareAgainstProduction(proposedSpec, {
+      days: opts.days,
+      track: opts.track,
+    });
+    return {
+      ...compared,
+      candidateLabel,
+      candidateVersionId,
+      resolvedSpec: proposedSpec,
+    };
+  }
+
+  private async compareAgainstProduction(
+    proposedSpec: FormulaSpec,
+    opts?: { days?: number; track?: string },
+  ): Promise<{
+    baseline: Record<string, number>;
+    proposed: Record<string, number>;
+    baselineVersionId: string;
+    baselineVersionLabel: string;
+    sample: number;
+  }> {
     const days = opts?.days ?? 14;
     const since = new Date();
     since.setUTCDate(since.getUTCDate() - days);
@@ -54,7 +131,6 @@ export class LedgerBacktestService {
 
     const production = await this.store.getProduction();
     const baselineSpec = production.spec;
-    const proposedSpec = patchFormulaSpec(baselineSpec, patch);
 
     const baseline = await this.metricsFor(rows, baselineSpec);
     const proposed = await this.metricsFor(rows, proposedSpec);

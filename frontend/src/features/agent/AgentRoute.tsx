@@ -14,12 +14,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FormulaSettingsCard } from "@/features/settings/FormulaSettingsCard";
 import { useAuth } from "@/hooks/useAuth";
 import {
   applyAgentProposal,
   clearAgentChat,
   loadAgentChatHistory,
   loadAgentProposals,
+  loadProductionFormula,
   rejectAgentProposal,
   runAgentCuration,
   sendAgentChatMessage,
@@ -38,8 +40,19 @@ export function AgentRoute() {
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
   const [curating, setCurating] = useState(false);
+  const [productionLabel, setProductionLabel] = useState<string | null>(null);
+  const [formulaKey, setFormulaKey] = useState(0);
 
   const pendingCount = proposals.filter((p) => p.status === "proposed").length;
+
+  async function reloadProduction() {
+    try {
+      const prod = await loadProductionFormula();
+      setProductionLabel(prod.versionLabel);
+    } catch {
+      /* non-blocking */
+    }
+  }
 
   async function reload() {
     setError(null);
@@ -49,6 +62,7 @@ export function AgentRoute() {
     ]);
     setMessages(history);
     setProposals(proposalRows);
+    await reloadProduction();
   }
 
   useEffect(() => {
@@ -100,13 +114,17 @@ export function AgentRoute() {
     setActionId(id);
     setError(null);
     try {
-      await applyAgentProposal(id);
-      toast.success(copy.common.apply);
+      const applied = await applyAgentProposal(id);
+      const label = applied.createdVersion?.versionLabel ?? applied.id.slice(0, 8);
+      toast.success(`${copy.agent.appliedAs} ${label}`);
       await reload();
+      setFormulaKey((k) => k + 1);
+      setTab("formula");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Apply failed";
       setError(message);
       toast.error(message);
+      throw err;
     } finally {
       setActionId(null);
     }
@@ -156,6 +174,16 @@ export function AgentRoute() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{copy.agent.title}</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">{copy.agent.description}</p>
+          {productionLabel ? (
+            <button
+              className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-border/80 bg-muted/30 px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => setTab("formula")}
+              type="button"
+            >
+              <span>{copy.agent.productionNow}</span>
+              <span className="font-mono text-foreground">{productionLabel}</span>
+            </button>
+          ) : null}
         </div>
 
         <DropdownMenu>
@@ -168,6 +196,7 @@ export function AgentRoute() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-44">
             <DropdownMenuItem onClick={() => void handleClear()}>Очистить чат</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setTab("formula")}>{copy.agent.formula}</DropdownMenuItem>
             {isAdmin ? (
               <>
                 <DropdownMenuSeparator />
@@ -185,7 +214,7 @@ export function AgentRoute() {
         onValueChange={setTab}
         value={tab}
       >
-        <TabsList className="h-9 w-full max-w-md shrink-0 sm:w-fit">
+        <TabsList className="h-9 w-full max-w-xl shrink-0 sm:w-fit">
           <TabsTrigger className="px-3" value="chat">
             Чат
           </TabsTrigger>
@@ -196,6 +225,9 @@ export function AgentRoute() {
                 {pendingCount}
               </Badge>
             ) : null}
+          </TabsTrigger>
+          <TabsTrigger className="px-3" value="formula">
+            {copy.agent.formula}
           </TabsTrigger>
         </TabsList>
 
@@ -221,10 +253,21 @@ export function AgentRoute() {
             error={error}
             isAdmin={isAdmin}
             loading={loading}
-            onApply={(id) => void handleApply(id)}
+            onApply={handleApply}
+            onOpenFormula={() => setTab("formula")}
             onReject={(id) => void handleReject(id)}
+            productionLabel={productionLabel}
             proposals={proposals}
           />
+        </TabsContent>
+
+        <TabsContent
+          className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden data-hidden:hidden"
+          value="formula"
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2">
+            <FormulaSettingsCard embedded key={formulaKey} onProductionChange={reloadProduction} />
+          </div>
         </TabsContent>
       </Tabs>
     </section>

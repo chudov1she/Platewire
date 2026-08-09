@@ -14,6 +14,7 @@ import { FormulaVersionsList } from "@/features/settings/FormulaVersionsList";
 import { useAuth } from "@/hooks/useAuth";
 import {
   activateFormulaVersion,
+  backtestFormula,
   loadFormulaVersions,
   loadProductionFormula,
   putProductionFormula,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/api";
 import { copy } from "@/lib/copy";
 import type { FormulaProductionResponse, FormulaSpec, FormulaVersionListItem } from "@/types";
+import { StatPill } from "@/components/feedback/StatusBadge";
 
 type ParamKey = keyof FormulaSpec["parameters"];
 
@@ -63,7 +65,13 @@ function paramDiff(baseline: FormulaSpec, draft: FormulaSpec): string[] {
   return lines;
 }
 
-export function FormulaSettingsCard() {
+export function FormulaSettingsCard({
+  embedded = false,
+  onProductionChange,
+}: {
+  embedded?: boolean;
+  onProductionChange?: () => void | Promise<void>;
+} = {}) {
   const { isAdmin } = useAuth();
   const [production, setProduction] = useState<FormulaProductionResponse | null>(null);
   const [versions, setVersions] = useState<FormulaVersionListItem[]>([]);
@@ -71,7 +79,7 @@ export function FormulaSettingsCard() {
   const [draft, setDraft] = useState<FormulaSpec | null>(null);
   const [derivedText, setDerivedText] = useState("");
   const [notesText, setNotesText] = useState("");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(embedded);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
@@ -80,6 +88,14 @@ export function FormulaSettingsCard() {
   const [versionLabel, setVersionLabel] = useState("");
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [pendingActivate, setPendingActivate] = useState(false);
+  const [draftBacktestBusy, setDraftBacktestBusy] = useState(false);
+  const [draftBacktest, setDraftBacktest] = useState<{
+    baselineRoi: number;
+    proposedRoi: number;
+    baselineProfit: number;
+    proposedProfit: number;
+    sample: number;
+  } | null>(null);
 
   async function reload() {
     const [prod, vers] = await Promise.all([loadProductionFormula(), loadFormulaVersions(20)]);
@@ -91,6 +107,7 @@ export function FormulaSettingsCard() {
     setDerivedText(JSON.stringify(spec.derived, null, 2));
     setNotesText(JSON.stringify(spec.notes, null, 2));
     setError(null);
+    await onProductionChange?.();
   }
 
   useEffect(() => {
@@ -218,6 +235,39 @@ export function FormulaSettingsCard() {
     }
   }
 
+  function loadVersionIntoEditor(spec: FormulaSpec, meta: { versionLabel: string }) {
+    const next = cloneSpec(spec);
+    setDraft(next);
+    setDerivedText(JSON.stringify(next.derived, null, 2));
+    setNotesText(JSON.stringify(next.notes, null, 2));
+    setAdvancedOpen(true);
+    setDraftBacktest(null);
+    toast.success(`${copy.settings.loadVersion}: ${meta.versionLabel}`);
+  }
+
+  async function onTestDraft() {
+    if (!resolvedDraft) {
+      toast.error(advancedError ?? "Невалидная форма");
+      return;
+    }
+    setDraftBacktestBusy(true);
+    try {
+      const result = await backtestFormula({ spec: resolvedDraft, days: 14 });
+      setDraftBacktest({
+        baselineRoi: result.baseline.roiPct,
+        proposedRoi: result.proposed.roiPct,
+        baselineProfit: result.baseline.profit,
+        proposedProfit: result.proposed.profit,
+        sample: result.sample,
+      });
+      toast.success(copy.settings.testOk);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : copy.settings.testFailed);
+    } finally {
+      setDraftBacktestBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <Card>
@@ -229,10 +279,14 @@ export function FormulaSettingsCard() {
   }
 
   return (
-    <Card>
+    <Card className={embedded ? "border-border/80 shadow-none" : undefined}>
       <CardHeader>
-        <CardTitle>{copy.settings.formulaTitle}</CardTitle>
+        <CardTitle>{embedded ? copy.agent.formula : copy.settings.formulaTitle}</CardTitle>
         <CardDescription>
+          {embedded
+            ? "Текущая production-спека, версии, тест на собранных играх (ledger replay)."
+            : null}
+          {embedded ? " " : null}
           base {production?.base} · env keys: {production?.availableEnvKeys.length ?? 0}
           {production ? (
             <span className="ml-2 font-mono text-xs">v {production.versionLabel}</span>
@@ -323,6 +377,14 @@ export function FormulaSettingsCard() {
           </Button>
           {isAdmin ? (
             <>
+              <Button
+                disabled={!resolvedDraft || draftBacktestBusy}
+                onClick={() => void onTestDraft()}
+                type="button"
+                variant="outline"
+              >
+                {draftBacktestBusy ? copy.settings.testRunning : copy.settings.testOnLedger}
+              </Button>
               <Button disabled={!dirty} onClick={onReset} type="button" variant="ghost">
                 {copy.settings.reset}
               </Button>
@@ -340,11 +402,24 @@ export function FormulaSettingsCard() {
           ) : null}
         </div>
 
+        {draftBacktest ? (
+          <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/70 bg-muted/20 p-3 sm:grid-cols-4">
+            <StatPill label="ROI production" value={`${draftBacktest.baselineRoi.toFixed(1)}%`} />
+            <StatPill label="ROI draft" value={`${draftBacktest.proposedRoi.toFixed(1)}%`} />
+            <StatPill label="Profit production" value={`${draftBacktest.baselineProfit.toFixed(1)} u`} />
+            <StatPill label="Profit draft" value={`${draftBacktest.proposedProfit.toFixed(1)} u`} />
+            <p className="col-span-full text-xs text-muted-foreground">
+              Live ledger replay · sample {draftBacktest.sample}
+            </p>
+          </div>
+        ) : null}
+
         <FormulaVersionsList
           activatingId={activatingId}
           isAdmin={isAdmin}
           onCancelActivate={() => setActivatingId(null)}
           onConfirmActivate={onConfirmActivate}
+          onLoadIntoEditor={loadVersionIntoEditor}
           onRequestActivate={setActivatingId}
           pendingActivate={pendingActivate}
           versions={versions}
