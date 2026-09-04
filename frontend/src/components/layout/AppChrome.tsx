@@ -133,7 +133,7 @@ export function AppChrome({ statusSlot, children }: AppChromeProps) {
         aria-label="Основная навигация"
         className="fixed inset-x-0 bottom-0 z-50 border-t border-border/80 bg-background/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-md md:hidden"
       >
-        <ul className="mx-auto grid h-16 max-w-6xl grid-cols-4 gap-1 px-2 py-1.5">
+        <ul className="mx-auto grid h-16 max-w-6xl grid-cols-2 gap-1 px-2 py-1.5">
           {PRIMARY_NAV.map((item) => {
             const active = isNavItemActive(pathname, item);
             return (

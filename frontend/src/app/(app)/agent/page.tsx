@@ -1,7 +1,5 @@
-"use client";
-
-import { AgentRoute } from "@/features/agent/AgentRoute";
+import { redirect } from "next/navigation";
 
 export default function AgentPage() {
-  return <AgentRoute />;
+  redirect("/");
 }

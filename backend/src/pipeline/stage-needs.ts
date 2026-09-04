@@ -104,9 +104,8 @@ export function needsStageWatch(opts: {
 }
 
 /**
- * Odds are locked/ok but there is still no ledger decision for that stage.
- * Prematch must keep retrying (with fresh lineups) until a row exists —
- * locking Winline markets alone is not "done".
+ * Odds are locked/ok but collection still wants another pass for that stage.
+ * Kept for tests / tooling; pipeline no longer waits on ledger decisions.
  */
 export function hasPendingLedgerDecision(opts: {
   snapshots: StageLockRow[];

@@ -5,8 +5,6 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UserStatus } from '../generated/prisma/client.js';
-import { AgentChatService } from '../ai/agent-chat.service.js';
 import { UsersService } from '../users/users.service.js';
 import { TelegramBotService } from './telegram-bot.service.js';
 
@@ -25,8 +23,8 @@ type TgUpdate = {
 };
 
 /**
- * Long-poll getUpdates → route /commands or AgentChatService.send.
- * Shares AgentChatMessage history with the web agent pane.
+ * Long-poll getUpdates for basic bot commands.
+ * Agent chat was removed — betting desk lives outside Platewire.
  */
 @Injectable()
 export class TelegramUpdatesService implements OnModuleInit, OnModuleDestroy {
@@ -34,14 +32,11 @@ export class TelegramUpdatesService implements OnModuleInit, OnModuleDestroy {
   private offset = 0;
   private stopped = false;
   private loop?: Promise<void>;
-  /** Serialize agent replies per chat to avoid interleaved history. */
-  private readonly inFlight = new Set<string>();
 
   constructor(
     private readonly config: ConfigService,
     private readonly bot: TelegramBotService,
     private readonly users: UsersService,
-    private readonly agentChat: AgentChatService,
   ) {}
 
   onModuleInit() {
@@ -65,7 +60,7 @@ export class TelegramUpdatesService implements OnModuleInit, OnModuleDestroy {
   private async pollLoop() {
     await this.deleteWebhook();
     await this.drainOnce(true);
-    this.logger.log('Telegram inbound chat polling started');
+    this.logger.log('Telegram inbound polling started (commands only)');
     while (!this.stopped) {
       try {
         await this.drainOnce(false);
@@ -132,13 +127,15 @@ export class TelegramUpdatesService implements OnModuleInit, OnModuleDestroy {
 
     const chatIdStr = String(chatId);
     const cmd = parseCommand(text);
-
-    if (cmd) {
-      await this.handleCommand(cmd.name, chatIdStr, String(from.id));
+    if (!cmd) {
+      await this.bot.sendHtml(
+        chatIdStr,
+        'Platewire собирает данные по матчам. Чат-агент и ставки отключены — смотри веб-приложение или API <code>/games/:id/pack</code>.',
+      );
       return;
     }
 
-    await this.handleAgentMessage(chatIdStr, String(from.id), text);
+    await this.handleCommand(cmd.name, chatIdStr, String(from.id));
   }
 
   private async handleCommand(
@@ -150,13 +147,13 @@ export class TelegramUpdatesService implements OnModuleInit, OnModuleDestroy {
       await this.bot.sendHtml(
         chatId,
         [
-          '<b>Platewire AI agent</b>',
+          '<b>Platewire</b> — коллектор данных MLB',
           '',
-          'Пиши обычным текстом — тот же агент, что в веб-панели (матчи, формула, журнал).',
+          'Войди на сайт через Telegram Login.',
+          'Ставки и AI-агент живут снаружи (Hermes + Game Pack API).',
           '',
           'Команды:',
           '/help — эта справка',
-          '/clear — сбросить историю диалога',
         ].join('\n'),
       );
       return;
@@ -164,71 +161,18 @@ export class TelegramUpdatesService implements OnModuleInit, OnModuleDestroy {
 
     if (name === 'clear') {
       const user = await this.users.findByTelegramId(telegramId);
-      if (!user || user.status === UserStatus.GUEST) {
+      if (!user) {
         await this.bot.sendHtml(
           chatId,
-          'Нет доступа. Войди на сайт через Telegram (USER/ADMIN).',
+          'Нет доступа. Войди на сайт через Telegram.',
         );
         return;
       }
-      await this.agentChat.clear(user.id);
-      await this.bot.sendHtml(chatId, 'История диалога очищена.');
-      return;
-    }
-
-    // Unknown /command — ignore (do not forward to agent).
-  }
-
-  private async handleAgentMessage(
-    chatId: string,
-    telegramId: string,
-    text: string,
-  ) {
-    if (this.inFlight.has(chatId)) {
       await this.bot.sendHtml(
         chatId,
-        'Подожди — предыдущий ответ ещё считается.',
+        'Чат-агент отключён — очищать нечего.',
       );
       return;
-    }
-
-    const user = await this.users.findByTelegramId(telegramId);
-    if (!user) {
-      await this.bot.sendHtml(
-        chatId,
-        'Аккаунт не найден. Сначала войди на сайт через Telegram Login — ID привяжется к пользователю.',
-      );
-      return;
-    }
-    if (user.status === UserStatus.GUEST) {
-      await this.bot.sendHtml(
-        chatId,
-        'Аккаунт пока <b>гость</b>. Попроси админа выдать USER/ADMIN, потом пиши снова.',
-      );
-      return;
-    }
-
-    this.inFlight.add(chatId);
-    const typingTimer = setInterval(() => {
-      void this.bot.sendChatAction(chatId, 'typing');
-    }, 4000);
-    try {
-      await this.bot.sendChatAction(chatId, 'typing');
-      const isAdmin = user.status === UserStatus.ADMIN;
-      const result = await this.agentChat.send(user.id, text, isAdmin);
-      const reply = result.message?.trim() || '(пустой ответ)';
-      await this.bot.sendMarkdown(chatId, reply);
-    } catch (err) {
-      this.logger.warn(
-        `agent telegram chatId=${chatId}: ${err instanceof Error ? err.message : err}`,
-      );
-      await this.bot.sendHtml(
-        chatId,
-        `Ошибка агента: ${escapeForHtml(err instanceof Error ? err.message : String(err))}`,
-      );
-    } finally {
-      clearInterval(typingTimer);
-      this.inFlight.delete(chatId);
     }
   }
 }
@@ -239,13 +183,6 @@ function parseCommand(
   const m = /^\/([a-zA-Z0-9_]+)(?:@\w+)?(?:\s+([\s\S]*))?$/.exec(text);
   if (!m) return null;
   return { name: m[1].toLowerCase(), payload: (m[2] ?? '').trim() };
-}
-
-function escapeForHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 function sleep(ms: number) {

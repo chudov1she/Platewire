@@ -1,7 +1,5 @@
-"use client";
-
-import { LedgerRoute } from "@/features/ledger/LedgerRoute";
+import { redirect } from "next/navigation";
 
 export default function LedgerPage() {
-  return <LedgerRoute />;
+  redirect("/");
 }

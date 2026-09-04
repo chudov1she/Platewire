@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { NoticeError, NoticeLoading } from "@/components/ui/feedback";
 import { GameRow } from "@/features/home/GameRow";
 import { useLivePoll } from "@/hooks/useLivePoll";
-import { loadGamesByDate, loadLedger, syncGamesForDate } from "@/lib/api";
+import { loadGamesByDate, syncGamesForDate } from "@/lib/api";
 import { copy } from "@/lib/copy";
 import { groupGamesByStage, isDisplayableGame } from "@/lib/board";
 import { gameUrl, slateDate } from "@/lib/routes";
-import type { NestGame, NestLedgerEntry } from "@/types";
+import type { NestGame } from "@/types";
 
 const LIVE_POLL_MS = 10_000;
 
@@ -18,12 +18,10 @@ function BoardSection({
   title,
   games,
   nowMs,
-  ledgerByGame,
 }: {
   title: string;
   games: NestGame[];
   nowMs: number;
-  ledgerByGame: Record<string, NestLedgerEntry[]>;
 }) {
   if (!games.length) return null;
   return (
@@ -34,7 +32,7 @@ function BoardSection({
       </div>
       <div>
         {games.map((game) => (
-          <GameRow game={game} href={gameUrl(game.id)} key={game.id} ledgerEntries={ledgerByGame[game.id] ?? []} nowMs={nowMs} />
+          <GameRow game={game} href={gameUrl(game.id)} key={game.id} nowMs={nowMs} />
         ))}
       </div>
     </section>
@@ -53,7 +51,6 @@ function formatClock(iso: string | null) {
 export function HomeRoute({ date }: { date?: string } = {}) {
   const boardDate = date ?? slateDate();
   const [games, setGames] = useState<NestGame[]>([]);
-  const [ledgerByGame, setLedgerByGame] = useState<Record<string, NestLedgerEntry[]>>({});
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
@@ -63,16 +60,8 @@ export function HomeRoute({ date }: { date?: string } = {}) {
 
   const loadBoard = useCallback(async () => {
     setError(null);
-    const [slate, ledgerRows] = await Promise.all([
-      loadGamesByDate(boardDate),
-      loadLedger({ limit: 200 }).catch(() => [] as NestLedgerEntry[]),
-    ]);
-    const byGame: Record<string, NestLedgerEntry[]> = {};
-    for (const row of ledgerRows) {
-      (byGame[row.gameId] ??= []).push(row);
-    }
+    const slate = await loadGamesByDate(boardDate);
     setGames(slate.games);
-    setLedgerByGame(byGame);
     setGeneratedAt(new Date().toISOString());
   }, [boardDate]);
 
@@ -88,7 +77,6 @@ export function HomeRoute({ date }: { date?: string } = {}) {
     return () => window.clearInterval(timer);
   }, []);
 
-  // Stable live poll — do NOT depend on nowMs (1s clock would reset the interval).
   const hasLive = games.some((g) => g.status === "LIVE");
   useLivePoll(hasLive, loadBoard, LIVE_POLL_MS);
 
@@ -147,9 +135,9 @@ export function HomeRoute({ date }: { date?: string } = {}) {
 
       {!loading && displayable.length ? (
         <div className="grid gap-3">
-          <BoardSection games={live} ledgerByGame={ledgerByGame} nowMs={nowMs} title="Live" />
-          <BoardSection games={upcoming} ledgerByGame={ledgerByGame} nowMs={nowMs} title="Ожидаются" />
-          <BoardSection games={final} ledgerByGame={ledgerByGame} nowMs={nowMs} title="Завершены" />
+          <BoardSection games={live} nowMs={nowMs} title="Live" />
+          <BoardSection games={upcoming} nowMs={nowMs} title="Ожидаются" />
+          <BoardSection games={final} nowMs={nowMs} title="Завершены" />
         </div>
       ) : !loading ? (
         <EmptyState description={copy.home.empty} title={copy.home.title} />

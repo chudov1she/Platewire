@@ -5,15 +5,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { NoticeError, NoticeLoading } from "@/components/ui/feedback";
-import { MatchFormula } from "@/features/match/MatchFormula";
 import { MatchInsights } from "@/features/match/MatchInsights";
 import { MatchMarkets } from "@/features/match/MatchMarkets";
 import { MatchScoreboard } from "@/features/match/MatchScoreboard";
 import { useLivePoll } from "@/hooks/useLivePoll";
-import { loadGame, loadLedger } from "@/lib/api";
+import { loadGame } from "@/lib/api";
 import { copy } from "@/lib/copy";
 import { deriveStage } from "@/lib/board";
-import type { F5OddsStage, NestGame, NestLedgerEntry } from "@/types";
+import type { F5OddsStage, NestGame } from "@/types";
 
 const LIVE_POLL_MS = 10_000;
 const LIVE_FORCE_REFRESH_MS = 30_000;
@@ -22,30 +21,18 @@ export function GameRoute({ gameId: gameIdProp }: { gameId?: string } = {}) {
   const params = useParams<{ gameId: string }>();
   const gameId = gameIdProp ?? params.gameId ?? "";
   const [game, setGame] = useState<NestGame | null>(null);
-  const [ledgerEntries, setLedgerEntries] = useState<NestLedgerEntry[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [track, setTrack] = useState<F5OddsStage>("prematch");
   const [lastPolledAt, setLastPolledAt] = useState<string | null>(null);
 
-  const loadLedgerForGame = useCallback(async (id: string) => {
-    const rows = await loadLedger({ limit: 200 });
-    setLedgerEntries(rows.filter((r) => r.gameId === id));
+  const loadAll = useCallback(async (id: string, opts?: { refreshGame?: boolean }) => {
+    const g = await loadGame(id, { refresh: opts?.refreshGame });
+    setGame(g);
+    setLastPolledAt(new Date().toISOString());
+    return g;
   }, []);
-
-  const loadAll = useCallback(
-    async (id: string, opts?: { refreshGame?: boolean }) => {
-      const [g] = await Promise.all([
-        loadGame(id, { refresh: opts?.refreshGame }),
-        loadLedgerForGame(id),
-      ]);
-      setGame(g);
-      setLastPolledAt(new Date().toISOString());
-      return g;
-    },
-    [loadLedgerForGame],
-  );
 
   useEffect(() => {
     if (!gameId) {
@@ -110,23 +97,8 @@ export function GameRoute({ gameId: gameIdProp }: { gameId?: string } = {}) {
             nowMs={nowMs}
             onRefresh={() => loadAll(game.id, { refreshGame: true }).then(() => undefined)}
           />
-          <MatchMarkets
-            game={game}
-            ledgerEntries={ledgerEntries}
-            onLedgerChanged={() => void loadLedgerForGame(game.id)}
-            onTrackChange={setTrack}
-            track={track}
-          />
-          <MatchFormula
-            gameId={game.id}
-            ledgerEntry={ledgerEntries.find((e) => e.track === track) ?? null}
-            track={track}
-          />
-          <MatchInsights
-            gameId={game.id}
-            ledgerEntries={ledgerEntries}
-            onLedgerChanged={() => void loadLedgerForGame(game.id)}
-          />
+          <MatchMarkets game={game} onTrackChange={setTrack} track={track} />
+          <MatchInsights gameId={game.id} />
         </section>
       ) : null}
       {!loading && !game && !error && (

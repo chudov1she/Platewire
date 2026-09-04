@@ -7,7 +7,7 @@ export function NavIcon({ name, className }: { name: NavIconName; className?: st
     stroke: "currentColor",
     strokeWidth: 1.75,
     viewBox: "0 0 24 24",
-    "aria-hidden": true as const
+    "aria-hidden": true as const,
   };
 
   switch (name) {
@@ -23,25 +23,6 @@ export function NavIcon({ name, className }: { name: NavIconName; className?: st
           <path d="M7 4h10v3H7V4Z" strokeLinejoin="round" />
           <path d="M5 7h14v13H5V7Z" strokeLinejoin="round" />
           <path d="M9 11h6M9 15h4" strokeLinecap="round" />
-        </svg>
-      );
-    case "ledger":
-      return (
-        <svg {...props}>
-          <path d="M6 5h12v14H6V5Z" strokeLinejoin="round" />
-          <path d="M9 9h6M9 13h6M9 17h4" strokeLinecap="round" />
-        </svg>
-      );
-    case "agent":
-      return (
-        <svg {...props}>
-          <rect height="10" rx="2" width="14" x="5" y="8" />
-          <path d="M12 8V5" strokeLinecap="round" />
-          <circle cx="12" cy="4" r="1.2" />
-          <circle cx="9" cy="12.5" r="1.1" fill="currentColor" stroke="none" />
-          <circle cx="15" cy="12.5" r="1.1" fill="currentColor" stroke="none" />
-          <path d="M9.5 15.5h5" strokeLinecap="round" />
-          <path d="M5 12H3.5M20.5 12H19" strokeLinecap="round" />
         </svg>
       );
     case "settings":

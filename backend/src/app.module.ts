@@ -1,13 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { AiModule } from './ai/ai.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ContextModule } from './context/context.module.js';
-import { FormulaModule } from './formula/formula.module.js';
 import { GamesModule } from './games/games.module.js';
 import { HealthModule } from './health/health.module.js';
-import { LedgerModule } from './ledger/ledger.module.js';
 import { OddsModule } from './odds/odds.module.js';
+import { PackModule } from './pack/pack.module.js';
 import { PipelineModule } from './pipeline/pipeline.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { SavantModule } from './savant/savant.module.js';
@@ -27,10 +25,8 @@ import { WeatherModule } from './weather/weather.module.js';
     OddsModule,
     SavantModule,
     ContextModule,
-    FormulaModule,
-    AiModule,
+    PackModule,
     TelegramModule,
-    LedgerModule,
     PipelineModule,
   ],
 })

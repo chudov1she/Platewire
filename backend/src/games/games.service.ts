@@ -13,6 +13,9 @@ const gameInclude = {
   homeTeam: true,
   awayTeam: true,
   venue: true,
+  savantPreview: { select: { hasLineup: true, hasProbable: true } },
+  f5OddsSnapshots: { select: { stage: true, ok: true } },
+  weatherObservations: { select: { id: true }, take: 1 },
 } as const;
 
 @Injectable()
@@ -199,6 +202,8 @@ export class GamesService {
     winlineEventId: number | null;
     winlineFlipped: boolean | null;
     fetchedAt: Date | null;
+    homeProbableMlbId?: number | null;
+    awayProbableMlbId?: number | null;
     homeTeam: {
       id: string;
       mlbTeamId: number;
@@ -225,7 +230,18 @@ export class GamesService {
       latitude: number | null;
       longitude: number | null;
     } | null;
+    savantPreview?: { hasLineup: boolean; hasProbable: boolean } | null;
+    f5OddsSnapshots?: Array<{ stage: string; ok: boolean }>;
+    weatherObservations?: Array<{ id: string }>;
   }) {
+    const odds = { prematch: false, inn1: false, inn2: false };
+    for (const snap of game.f5OddsSnapshots ?? []) {
+      if (!snap.ok) continue;
+      if (snap.stage === 'prematch') odds.prematch = true;
+      if (snap.stage === 'inn1') odds.inn1 = true;
+      if (snap.stage === 'inn2') odds.inn2 = true;
+    }
+
     return {
       id: game.id,
       mlb_game_pk: game.mlbGamePk,
@@ -250,6 +266,19 @@ export class GamesService {
       winline_event_id: game.winlineEventId,
       winline_flipped: game.winlineFlipped,
       fetched_at: game.fetchedAt?.toISOString() ?? null,
+      completeness: {
+        has_lineup: game.savantPreview?.hasLineup === true,
+        has_home_sp:
+          game.homeProbableMlbId != null ||
+          game.savantPreview?.hasProbable === true,
+        has_away_sp:
+          game.awayProbableMlbId != null ||
+          game.savantPreview?.hasProbable === true,
+        has_odds: odds,
+        weather_ready:
+          (game.weatherObservations?.length ?? 0) > 0 ||
+          Boolean(game.weatherTemp),
+      },
       home_team: {
         id: game.homeTeam.id,
         mlb_team_id: game.homeTeam.mlbTeamId,

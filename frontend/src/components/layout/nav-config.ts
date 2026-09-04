@@ -1,7 +1,7 @@
 import { archiveUrl, defaultArchiveDate } from "@/lib/routes";
 import { copy } from "@/lib/copy";
 
-export type NavIconName = "home" | "archive" | "ledger" | "agent" | "settings";
+export type NavIconName = "home" | "archive" | "settings";
 
 export type NavItem = {
   id: string;
@@ -23,17 +23,15 @@ export const MOBILE_NAV: NavItem[] = [
     label: copy.nav.home,
     icon: "home",
     end: true,
-    activePrefixes: ["/game", "/player", "/official", "/match"]
+    activePrefixes: ["/game", "/player", "/official", "/match"],
   },
   {
     id: "archive",
     to: archiveUrl(defaultArchiveDate()),
     label: copy.nav.archive,
     icon: "archive",
-    matchPrefix: "/archive"
+    matchPrefix: "/archive",
   },
-  { id: "ledger", to: "/ledger", label: copy.nav.ledger, icon: "ledger", matchPrefix: "/ledger" },
-  { id: "agent", to: "/agent", label: copy.nav.agent, icon: "agent", matchPrefix: "/agent" }
 ];
 
 /** Desktop primary links (settings below separator in rail) */
@@ -44,7 +42,7 @@ export const SETTINGS_NAV: NavItem = {
   to: "/settings",
   label: copy.nav.settings,
   icon: "settings",
-  matchPrefix: "/settings"
+  matchPrefix: "/settings",
 };
 
 export const PRIMARY_NAV = MOBILE_NAV;
@@ -62,8 +60,6 @@ export function isNavItemActive(pathname: string, item: NavItem) {
 export function sectionTitle(pathname: string): string {
   if (pathname.startsWith("/settings")) return copy.nav.settings;
   if (pathname.startsWith("/archive")) return copy.nav.archive;
-  if (pathname.startsWith("/ledger")) return copy.nav.ledger;
-  if (pathname.startsWith("/agent")) return copy.nav.agent;
   if (pathname.startsWith("/game") || pathname.startsWith("/match")) return copy.home.title;
   if (pathname.startsWith("/player") || pathname.startsWith("/official")) return copy.home.title;
   if (pathname === "/" || pathname === "") return copy.nav.home;

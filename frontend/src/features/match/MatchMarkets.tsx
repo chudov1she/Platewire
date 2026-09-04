@@ -5,13 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InlineLoader } from "@/components/ui/page-loader";
-import { useAuth } from "@/hooks/useAuth";
 import { LEDGER_TRACKS } from "@/constants/ledger";
-import { ledgerResultLabel } from "@/features/match/ledger-labels";
 import { abbr } from "@/features/match/match-format";
-import { ApiError, captureLedger, loadGameF5Track, loadReadiness, refreshGameF5 } from "@/lib/api";
+import { ApiError, loadGameF5Track, refreshGameF5 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { F5OddsStage, NestF5Snapshot, NestGame, NestLedgerEntry, NestReadinessResponse } from "@/types";
+import type { F5OddsStage, NestF5Snapshot, NestGame } from "@/types";
 
 function Odds({ value }: { value: number | null | undefined }) {
   return <span className="font-mono text-sm font-semibold tabular-nums text-foreground">{value != null ? value.toFixed(2) : "—"}</span>;
@@ -41,21 +39,14 @@ export function MatchMarkets({
   game,
   track,
   onTrackChange,
-  ledgerEntries,
-  onLedgerChanged,
 }: {
   game: NestGame;
   track: F5OddsStage;
   onTrackChange: (track: F5OddsStage) => void;
-  ledgerEntries: NestLedgerEntry[];
-  onLedgerChanged?: () => void;
 }) {
-  const { isAdmin } = useAuth();
   const [snapshot, setSnapshot] = useState<NestF5Snapshot | null>(null);
-  const [readiness, setReadiness] = useState<NestReadinessResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -63,12 +54,10 @@ export function MatchMarkets({
     setLoading(true);
     setError(null);
     try {
-      const [snap, rd] = await Promise.all([
-        loadGameF5Track(game.id, track).catch((e) => (e instanceof ApiError ? null : Promise.reject(e))),
-        loadReadiness(game.id, track).catch(() => null),
-      ]);
+      const snap = await loadGameF5Track(game.id, track).catch((e) =>
+        e instanceof ApiError ? null : Promise.reject(e),
+      );
       setSnapshot(snap);
-      setReadiness(rd);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить линии");
     } finally {
@@ -96,22 +85,6 @@ export function MatchMarkets({
     }
   }
 
-  async function onCapture(force: boolean) {
-    setCapturing(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const res = await captureLedger(game.id, track, { force });
-      setNotice(res.captured ? `Записано в журнал: ${res.reason}` : `Не записано: ${res.reason}`);
-      onLedgerChanged?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось захватить в журнал");
-    } finally {
-      setCapturing(false);
-    }
-  }
-
-  const entry = ledgerEntries.find((e) => e.track === track) ?? null;
   const awayAbbr = abbr(game.away_team.abbreviation);
   const homeAbbr = abbr(game.home_team.abbreviation);
 
@@ -119,7 +92,7 @@ export function MatchMarkets({
     <Card className="w-full min-w-0 overflow-hidden border-border bg-card text-card-foreground">
       <CardHeader className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="text-base font-semibold sm:text-lg">Рынки F5 (Winline, автоматически)</CardTitle>
+          <CardTitle className="text-base font-semibold sm:text-lg">Рынки F5 (Winline)</CardTitle>
           <div className="flex gap-2">
             <Button disabled={refreshing} onClick={() => void onRefresh()} size="sm" type="button" variant="outline">
               {refreshing ? "…" : "Обновить линии"}
@@ -147,32 +120,16 @@ export function MatchMarkets({
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {notice ? <p className="text-sm text-emerald-400">{notice}</p> : null}
 
-        {readiness ? (
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <Badge variant={readiness.ready ? "outline" : "secondary"} className={cn(readiness.ready && "border-emerald-500/40 text-emerald-400")}>
-              {readiness.ready ? `Готов · score ${readiness.score}` : `Не готов · score ${readiness.score}`}
-            </Badge>
-            {readiness.marketsUsed ? <Badge variant="outline">рынки учтены</Badge> : null}
-            {readiness.locked ? <Badge variant="outline">locked</Badge> : null}
-            {readiness.hardGaps.map((g) => (
-              <Badge key={g} variant="outline" className="border-destructive/40 text-destructive">
-                {g}
-              </Badge>
-            ))}
-            {readiness.softGaps.map((g) => (
-              <Badge key={g} variant="outline" className="text-amber-400">
-                {g}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
-
         {!loading && snapshot ? (
           <>
-            <p className="text-xs text-muted-foreground">
-              captured {snapshot.captured_at ? new Date(snapshot.captured_at).toLocaleString("ru-RU") : "—"} · stage {snapshot.stage}
-              {snapshot.locked ? " · locked" : ""}
-              {snapshot.missing.length ? ` · нет: ${snapshot.missing.join(", ")}` : ""}
+            <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                captured {snapshot.captured_at ? new Date(snapshot.captured_at).toLocaleString("ru-RU") : "—"} · stage{" "}
+                {snapshot.stage}
+              </span>
+              {snapshot.locked ? <Badge variant="outline">locked</Badge> : null}
+              {snapshot.ok ? <Badge variant="outline" className="border-emerald-500/40 text-emerald-400">ok</Badge> : null}
+              {snapshot.missing.length ? <span>· нет: {snapshot.missing.join(", ")}</span> : null}
             </p>
             <div className="grid gap-3 sm:grid-cols-3">
               <MarketBlock title="Исход F5">
@@ -208,9 +165,7 @@ export function MatchMarkets({
                       <Odds value={snapshot.main_team_totals?.away?.under} />
                     </Cell>
                     <Cell label={`${awayAbbr} ${snapshot.main_team_totals?.away?.line ?? "—"}`}>
-                      <span className="font-mono text-sm">
-                        {snapshot.main_team_totals?.away?.line ?? "—"}
-                      </span>
+                      <span className="font-mono text-sm">{snapshot.main_team_totals?.away?.line ?? "—"}</span>
                     </Cell>
                     <Cell label={`${awayAbbr} Б`}>
                       <Odds value={snapshot.main_team_totals?.away?.over} />
@@ -221,9 +176,7 @@ export function MatchMarkets({
                       <Odds value={snapshot.main_team_totals?.home?.under} />
                     </Cell>
                     <Cell label={`${homeAbbr} ${snapshot.main_team_totals?.home?.line ?? "—"}`}>
-                      <span className="font-mono text-sm">
-                        {snapshot.main_team_totals?.home?.line ?? "—"}
-                      </span>
+                      <span className="font-mono text-sm">{snapshot.main_team_totals?.home?.line ?? "—"}</span>
                     </Cell>
                     <Cell label={`${homeAbbr} Б`}>
                       <Odds value={snapshot.main_team_totals?.home?.over} />
@@ -235,36 +188,6 @@ export function MatchMarkets({
           </>
         ) : null}
         {!loading && !snapshot ? <p className="text-sm text-muted-foreground">Нет снимка линий для этого этапа.</p> : null}
-
-        {entry ? (
-          <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
-            <p className="text-[11px] font-semibold uppercase text-muted-foreground">Запись в журнале</p>
-            {entry.action === "pass" ? (
-              <p className="mt-1 text-muted-foreground">
-                {entry.captureReason && ["no_odds", "odds_not_locked", "not_ready"].includes(entry.captureReason)
-                  ? `Пропуск (${entry.captureReason}) — ${entry.notifyBrief ?? entry.rationale ?? "стадия без ставки."}`
-                  : `Pass — модель не увидела ценности. ${entry.rationale ?? ""}`}
-              </p>
-            ) : (
-              <div className="mt-1 flex flex-wrap items-center gap-3">
-                <span className="font-semibold">{entry.pickLabel}</span>
-                <span className="font-mono">@{entry.decimalOdds?.toFixed(2)}</span>
-                <span>V {entry.valuePct?.toFixed(1)}% · ROI {entry.roiPct?.toFixed(1)}%</span>
-                <Badge variant="outline">{ledgerResultLabel(entry.resultStatus)}</Badge>
-                {entry.profitUnits != null ? <span className={entry.profitUnits >= 0 ? "text-emerald-400" : "text-destructive"}>{entry.profitUnits >= 0 ? "+" : ""}{entry.profitUnits.toFixed(1)}u</span> : null}
-              </div>
-            )}
-          </div>
-        ) : isAdmin ? (
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={capturing} onClick={() => void onCapture(false)} size="sm" type="button" variant="outline">
-              {capturing ? "…" : "Захватить в журнал"}
-            </Button>
-            <Button disabled={capturing} onClick={() => void onCapture(true)} size="sm" type="button" variant="outline">
-              Форсировать захват
-            </Button>
-          </div>
-        ) : null}
       </CardContent>
     </Card>
   );

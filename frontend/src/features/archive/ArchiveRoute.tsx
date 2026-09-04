@@ -5,24 +5,22 @@ import { useParams, useRouter } from "next/navigation";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { NoticeError, NoticeLoading } from "@/components/ui/feedback";
 import { GameRow } from "@/features/home/GameRow";
-import { loadGamesByDate, loadLedger } from "@/lib/api";
+import { loadGamesByDate } from "@/lib/api";
 import { copy } from "@/lib/copy";
 import { isDisplayableGame } from "@/lib/board";
 import { archiveUrl, defaultArchiveDate, gameUrl, slateDate } from "@/lib/routes";
-import type { NestGame, NestLedgerEntry } from "@/types";
+import type { NestGame } from "@/types";
 
 function ArchivePage({
   archiveDate,
   games,
   nowMs,
   onArchiveDateChange,
-  ledgerByGame,
 }: {
   archiveDate: string;
   games: NestGame[];
   nowMs: number;
   onArchiveDateChange: (value: string) => void;
-  ledgerByGame: Record<string, NestLedgerEntry[]>;
 }) {
   return (
     <div className="grid gap-4">
@@ -48,7 +46,7 @@ function ArchivePage({
       {games.length ? (
         <section className="overflow-hidden rounded-lg border border-border/80">
           {games.map((game) => (
-            <GameRow game={game} href={gameUrl(game.id)} key={game.id} ledgerEntries={ledgerByGame[game.id] ?? []} nowMs={nowMs} />
+            <GameRow game={game} href={gameUrl(game.id)} key={game.id} nowMs={nowMs} />
           ))}
         </section>
       ) : (
@@ -63,7 +61,6 @@ export function ArchiveRoute({ date: dateProp }: { date?: string } = {}) {
   const date = dateProp ?? params.date ?? defaultArchiveDate();
   const router = useRouter();
   const [games, setGames] = useState<NestGame[]>([]);
-  const [ledgerByGame, setLedgerByGame] = useState<Record<string, NestLedgerEntry[]>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,12 +69,8 @@ export function ArchiveRoute({ date: dateProp }: { date?: string } = {}) {
     setLoading(true);
     setError(null);
     loadGamesByDate(date)
-      .then(async (slate) => {
+      .then((slate) => {
         setGames(slate.games.filter(isDisplayableGame));
-        const rows = await loadLedger({ limit: 200 }).catch(() => [] as NestLedgerEntry[]);
-        const byGame: Record<string, NestLedgerEntry[]> = {};
-        for (const row of rows) (byGame[row.gameId] ??= []).push(row);
-        setLedgerByGame(byGame);
       })
       .catch((err) => setError(err instanceof Error ? err.message : copy.archive.loadFailed))
       .finally(() => setLoading(false));
@@ -96,7 +89,6 @@ export function ArchiveRoute({ date: dateProp }: { date?: string } = {}) {
         <ArchivePage
           archiveDate={date}
           games={games}
-          ledgerByGame={ledgerByGame}
           nowMs={nowMs}
           onArchiveDateChange={(value) => router.push(archiveUrl(value))}
         />

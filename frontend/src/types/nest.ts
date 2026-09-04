@@ -76,6 +76,13 @@ export type NestGame = {
   winline_event_id: number | null;
   winline_flipped: boolean | null;
   fetched_at: string | null;
+  completeness?: {
+    has_lineup: boolean;
+    has_home_sp: boolean;
+    has_away_sp: boolean;
+    has_odds: { prematch: boolean; inn1: boolean; inn2: boolean };
+    weather_ready: boolean;
+  };
   home_team: NestTeam;
   away_team: NestTeam;
   venue: NestVenue;

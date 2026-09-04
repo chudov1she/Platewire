@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { resolveStartingPitcherId } from '../formula/matchup-inputs.service.js';
+import { resolveStartingPitcherId } from '../pack/matchup-inputs.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { SavantPreviewSummary } from '../savant/savant.client.js';
 import { SavantPreviewService } from '../savant/savant-preview.service.js';

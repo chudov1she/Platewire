@@ -1,37 +1,17 @@
 import { API_BASE } from "@/lib/config";
 import { getAccessToken, setAccessToken } from "@/lib/auth-storage";
 import type {
-  AgentChatSendResponse,
-  AgentCurationRunResponse,
   AuthTokens,
   F5OddsStage,
-  FormulaProductionResponse,
-  FormulaSpec,
-  FormulaVersionDetail,
-  FormulaVersionListItem,
   GameOneResponse,
   GameSyncResponse,
   GamesSlateResponse,
-  LedgerCaptureResponse,
-  LedgerSettleBatchResponse,
-  LedgerSettleGameResponse,
-  NestAgentChatMessage,
-  NestAgentProposal,
-  AgentProposalApplyResult,
-  AgentProposalMetrics,
-  AgentProposalPreview,
   NestF5Snapshot,
   NestF5Tracks,
-  NestFormulaEval,
   NestGame,
   NestGameContext,
-  NestLedgerEntry,
-  NestLedgerEntryDetail,
-  NestLedgerEquity,
-  NestLedgerStats,
   NestOfficialFeaturesResponse,
   NestPlayerFeaturesResponse,
-  NestReadinessResponse,
   NestSavantResponse,
   NestStatcastResponse,
   NestWeatherResponse,
@@ -125,11 +105,8 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
 const getJson = <T>(path: string) => requestJson<T>(path);
 const postJson = <T>(path: string, body?: unknown) =>
   requestJson<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
-const putJson = <T>(path: string, body?: unknown) =>
-  requestJson<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) });
 const patchJson = <T>(path: string, body?: unknown) =>
   requestJson<T>(path, { method: "PATCH", body: body === undefined ? undefined : JSON.stringify(body) });
-const deleteJson = <T>(path: string) => requestJson<T>(path, { method: "DELETE" });
 
 // ——— Auth ———
 
@@ -281,171 +258,6 @@ export async function refreshGameFullOdds(gameId: string, opts?: { forceRebind?:
 export async function listWinlineMatches(opts?: { refresh?: boolean }): Promise<{ ok: true; updated_at: string; count: number; matches: NestWinlineMatch[] }> {
   const q = opts?.refresh ? "?refresh=1" : "";
   return getJson(`/odds/winline/matches${q}`);
-}
-
-// ——— Readiness / Formula ———
-
-export async function loadReadiness(gameId: string, track: F5OddsStage = "prematch"): Promise<NestReadinessResponse> {
-  return getJson<NestReadinessResponse>(`/games/${gameId}/readiness?track=${track}`);
-}
-
-export async function evalFormula(gameId: string, opts?: { track?: F5OddsStage; versionId?: string; spec?: FormulaSpec }): Promise<NestFormulaEval> {
-  return postJson<NestFormulaEval>(`/games/${gameId}/formula/eval`, {
-    track: opts?.track ?? "prematch",
-    versionId: opts?.versionId,
-    spec: opts?.spec,
-  });
-}
-
-export async function loadProductionFormula(): Promise<FormulaProductionResponse> {
-  return getJson<FormulaProductionResponse>("/formula/production");
-}
-
-export async function loadFormulaVersions(limit = 50): Promise<FormulaVersionListItem[]> {
-  return getJson<FormulaVersionListItem[]>(`/formula/versions?limit=${limit}`);
-}
-
-export async function loadFormulaVersion(id: string): Promise<FormulaVersionDetail> {
-  return getJson<FormulaVersionDetail>(`/formula/versions/${id}`);
-}
-
-export async function createFormulaVersion(body: { versionLabel?: string; spec?: FormulaSpec; patch?: Record<string, unknown>; fromVersionId?: string; notes?: string; activate?: boolean }): Promise<FormulaVersionDetail> {
-  return postJson<FormulaVersionDetail>("/formula/versions", body);
-}
-
-export async function putProductionFormula(body: { versionLabel?: string; spec?: FormulaSpec; patch?: Record<string, unknown>; fromVersionId?: string; notes?: string }): Promise<FormulaVersionDetail> {
-  return putJson<FormulaVersionDetail>("/formula/production", body);
-}
-
-export async function activateFormulaVersion(id: string): Promise<FormulaProductionResponse> {
-  return postJson<FormulaProductionResponse>(`/formula/versions/${id}/activate`);
-}
-
-export async function validateFormulaSpec(spec: unknown): Promise<{ ok: boolean; errors: string[]; spec: FormulaSpec }> {
-  return postJson(`/formula/validate`, { spec });
-}
-
-export type FormulaBacktestResult = {
-  baseline: AgentProposalMetrics;
-  proposed: AgentProposalMetrics;
-  baselineVersionId: string;
-  baselineVersionLabel: string;
-  candidateLabel: string;
-  candidateVersionId: string | null;
-  resolvedSpec: FormulaSpec;
-  sample: number;
-};
-
-export async function backtestFormula(body: {
-  days?: number;
-  track?: string;
-  versionId?: string;
-  spec?: FormulaSpec;
-  patch?: Record<string, unknown>;
-  fromVersionId?: string;
-}): Promise<FormulaBacktestResult> {
-  return postJson<FormulaBacktestResult>("/ledger/backtest-formula", body);
-}
-
-// ——— Ledger ———
-
-export async function loadLedger(params?: { track?: string; status?: string; action?: string; limit?: number }): Promise<NestLedgerEntry[]> {
-  const q = new URLSearchParams();
-  if (params?.track) q.set("track", params.track);
-  if (params?.status) q.set("status", params.status);
-  if (params?.action) q.set("action", params.action);
-  q.set("limit", String(params?.limit ?? 100));
-  return getJson<NestLedgerEntry[]>(`/ledger?${q}`);
-}
-
-export async function loadLedgerStats(
-  days = 7,
-  track?: string,
-): Promise<NestLedgerStats> {
-  const q = new URLSearchParams({ days: String(days) });
-  if (track) q.set("track", track);
-  return getJson<NestLedgerStats>(`/ledger/stats?${q}`);
-}
-
-export async function loadLedgerEquity(
-  limit = 200,
-  track?: string,
-): Promise<NestLedgerEquity> {
-  const q = new URLSearchParams({ limit: String(limit) });
-  if (track) q.set("track", track);
-  return getJson<NestLedgerEquity>(`/ledger/equity?${q}`);
-}
-
-export async function loadLedgerEntry(id: string): Promise<NestLedgerEntryDetail> {
-  return getJson<NestLedgerEntryDetail>(`/ledger/${id}`);
-}
-
-export async function patchLedgerEntry(
-  id: string,
-  excludedFromStats: boolean,
-): Promise<NestLedgerEntry> {
-  return patchJson<NestLedgerEntry>(`/ledger/${id}`, { excludedFromStats });
-}
-
-export async function captureLedger(gameId: string, track: F5OddsStage, opts?: { force?: boolean; allowUnlocked?: boolean }): Promise<LedgerCaptureResponse> {
-  return postJson<LedgerCaptureResponse>(`/games/${gameId}/ledger/capture`, {
-    track,
-    force: opts?.force,
-    allowUnlocked: opts?.allowUnlocked,
-  });
-}
-
-export async function settleGameLedger(gameId: string): Promise<LedgerSettleGameResponse> {
-  return postJson<LedgerSettleGameResponse>(`/games/${gameId}/ledger/settle`);
-}
-
-export async function settleLedgerBatch(limit = 50): Promise<LedgerSettleBatchResponse> {
-  return postJson<LedgerSettleBatchResponse>(`/ledger/settle-batch?limit=${limit}`);
-}
-
-// ——— AI / Agent ———
-
-export async function runAgentCuration(prompt?: string): Promise<AgentCurationRunResponse> {
-  return postJson<AgentCurationRunResponse>("/agent/curation/run", { prompt });
-}
-
-export async function loadAgentProposals(limit = 50): Promise<NestAgentProposal[]> {
-  return getJson<NestAgentProposal[]>(`/agent/proposals?limit=${limit}`);
-}
-
-export async function loadAgentProposal(id: string): Promise<NestAgentProposal> {
-  return getJson<NestAgentProposal>(`/agent/proposals/${id}`);
-}
-
-export async function previewAgentProposal(
-  id: string,
-  opts?: { days?: number; track?: string },
-): Promise<AgentProposalPreview> {
-  const q = new URLSearchParams();
-  if (opts?.days) q.set("days", String(opts.days));
-  if (opts?.track) q.set("track", opts.track);
-  const qs = q.toString();
-  return getJson<AgentProposalPreview>(`/agent/proposals/${id}/preview${qs ? `?${qs}` : ""}`);
-}
-
-export async function applyAgentProposal(id: string): Promise<AgentProposalApplyResult> {
-  return postJson<AgentProposalApplyResult>(`/agent/proposals/${id}/apply`);
-}
-
-export async function rejectAgentProposal(id: string): Promise<NestAgentProposal> {
-  return postJson<NestAgentProposal>(`/agent/proposals/${id}/reject`);
-}
-
-export async function loadAgentChatHistory(limit = 50): Promise<NestAgentChatMessage[]> {
-  return getJson<NestAgentChatMessage[]>(`/agent/chat?limit=${limit}`);
-}
-
-export async function sendAgentChatMessage(message: string): Promise<AgentChatSendResponse> {
-  return postJson<AgentChatSendResponse>("/agent/chat", { message });
-}
-
-export async function clearAgentChat(): Promise<{ ok: true }> {
-  return deleteJson<{ ok: true }>("/agent/chat");
 }
 
 // ——— Pipeline / ops ———
