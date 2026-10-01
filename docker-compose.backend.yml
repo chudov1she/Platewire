@@ -1,0 +1,25 @@
+# Backend-only overlay: no frontend/nginx, loopback API, RAM caps.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.backend.yml --env-file .env.docker up -d db backend
+#
+# Used by desk/scripts/server-deploy.sh on the supervisor.
+
+services:
+  db:
+    mem_limit: 512m
+
+  backend:
+    ports:
+      - "127.0.0.1:8000:8000"
+    mem_limit: 2048m
+    cpus: 1.5
+    shm_size: 512mb
+    environment:
+      # Telegram bot belongs to the Hermes platewire-gateway only. Never poll getUpdates here.
+      TELEGRAM_BOT_TOKEN: ""
+      TELEGRAM_BOT_USERNAME: ""
+      TELEGRAM_NOTIFY_ENABLED: "false"
+      TELEGRAM_NOTIFY_CHAT_IDS: ""
+      # Office dispatcher target and shared secret come from .env.docker.
+      HERMES_WEBHOOK_URL: ${HERMES_WEBHOOK_URL:-}
+      HERMES_WEBHOOK_SECRET: ${HERMES_WEBHOOK_SECRET:-}
