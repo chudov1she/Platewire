@@ -20,7 +20,23 @@ BOARD_PATH = RUNTIME / "board.json"
 SEED_BUDGET = ROOT / "budget.json"
 LOCK_PATH = RUNTIME / "cashier.lock"
 TELEGRAM_PATH = ROOT / "telegram.json"
-HERMES_ENV = Path(os.environ.get("LOCALAPPDATA", "")) / "hermes" / ".env"
+
+
+def _hermes_env_path() -> Path:
+    """Windows keeps Hermes under %LOCALAPPDATA%; Linux under HERMES_HOME."""
+    explicit = os.environ.get("PLATEWIRE_HERMES_ENV", "").strip()
+    if explicit:
+        return Path(explicit)
+    home = os.environ.get("HERMES_HOME", "").strip()
+    if home:
+        return Path(home) / ".env"
+    local = os.environ.get("LOCALAPPDATA", "").strip()
+    if local:
+        return Path(local) / "hermes" / ".env"
+    return Path.home() / ".hermes" / ".env"
+
+
+HERMES_ENV = _hermes_env_path()
 
 
 def _now() -> str:

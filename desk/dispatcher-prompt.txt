@@ -2,7 +2,7 @@
 Вызови delegate_task ровно один раз. Текст задания дословно:
 
 Запусти команду и верни её stdout целиком. Числа не выдумывай.
-python D:\Projects\Sergey\platewire\desk\scripts\run_game.py --game-id {game_id} --reason {reason} --stage {stage}
+python3 /opt/platewire/desk/scripts/run_game.py --game-id {game_id} --reason {reason} --stage {stage}
 
 Матч: {matchup}
 Причина: {reason}

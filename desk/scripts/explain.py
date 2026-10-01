@@ -9,8 +9,22 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-HERMES_ENV = Path(os.environ.get("LOCALAPPDATA", "")) / "hermes" / ".env"
-MODEL = "deepseek-v4.1-flash"
+def _hermes_env_path() -> Path:
+    """Windows keeps Hermes under %LOCALAPPDATA%; Linux under HERMES_HOME."""
+    explicit = os.environ.get("PLATEWIRE_HERMES_ENV", "").strip()
+    if explicit:
+        return Path(explicit)
+    home = os.environ.get("HERMES_HOME", "").strip()
+    if home:
+        return Path(home) / ".env"
+    local = os.environ.get("LOCALAPPDATA", "").strip()
+    if local:
+        return Path(local) / "hermes" / ".env"
+    return Path.home() / ".hermes" / ".env"
+
+
+HERMES_ENV = _hermes_env_path()
+MODEL = os.environ.get("PLATEWIRE_EXPLAIN_MODEL", "").strip() or "deepseek-v4.1-flash"
 
 
 def _env() -> dict[str, str]:

@@ -7,7 +7,7 @@ description: "Use when running the Platewire betting office — formula version,
 
 The collector watches games. Hermes calculates. The cashier is a script, not a guess.
 
-Desk root: `D:\Projects\Sergey\platewire\desk`
+Desk root: `/opt/platewire/desk`
 
 ## General
 
@@ -29,8 +29,8 @@ Do not edit the file when the collector is up. Save a new database version inste
 
 ## One game
 
-```powershell
-python D:\Projects\Sergey\platewire\desk\scripts\run_game.py --game-id <id> --reason manual --stage prematch
+```bash
+python3 /opt/platewire/desk/scripts/run_game.py --game-id <id> --reason manual --stage prematch
 ```
 
 The script refreshes missing lineup, weather, or odds once, runs `analyze_pack.py`, and appends `desk/runtime/ledger.jsonl`.
@@ -52,28 +52,39 @@ The same group keeps one pinned rich message: bank, money in play, today's resul
 
 When the user asks to top up the bank, add the units with this command and tell them the new bank from its output. Do not edit `budget.json` by hand. Amount is a positive number, at most 1000000.
 
-```powershell
-python D:\Projects\Sergey\platewire\desk\scripts\bank.py deposit --amount <units> --note "<why>"
+```bash
+python3 /opt/platewire/desk/scripts/bank.py deposit --amount <units> --note "<why>"
 ```
 
 When the user asks for today's report, send one rich message. The tables carry the money and the results. The note under them is the day's overall result for the current formula and one or two recommendations it supports. The note does not change the formula and does not repeat the money table. Do not write that note yourself.
 
-```powershell
-python D:\Projects\Sergey\platewire\desk\scripts\bank.py report
+```bash
+python3 /opt/platewire/desk/scripts/bank.py report
 ```
 
 To redraw the pin without adding money:
 
-```powershell
-python D:\Projects\Sergey\platewire\desk\scripts\bank.py show
+```bash
+python3 /opt/platewire/desk/scripts/bank.py show
 ```
 
 ## Dispatcher
 
-Collector POST `/webhooks/platewire` on window open, lineup change, inning stage change, and final. A webhook script starts the worker directly:
+The collector POSTs to `HERMES_WEBHOOK_URL` (loopback `127.0.0.1:8645/webhooks/platewire`)
+on window open, lineup change, inning stage change, and final, signing the body with
+`HERMES_WEBHOOK_SECRET`. `desk/scripts/office_webhook.py` validates the signature,
+deduplicates on `game_id:fingerprint`, and starts the office agent:
 
 ```text
-python D:\Projects\Sergey\platewire\desk\scripts\run_game.py --game-id <id> --reason <reason> --stage <stage>
+hermes chat -q "<desk/dispatcher-prompt.txt with the event filled in>"
+```
+
+The agent then runs exactly one worker:
+
+```text
+python3 /opt/platewire/desk/scripts/run_game.py --game-id <id> --reason <reason> --stage <stage>
 ```
 
 One game, one run. Do not calculate λ in prose. Do not send Telegram yourself.
+Duplicate and busy events are answered 200 and ignored; the listener log is
+`desk/runtime/webhook.log`.
