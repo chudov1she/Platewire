@@ -46,6 +46,8 @@ WorkingDirectory=$DESK
 EnvironmentFile=$OFFICE_ENV
 Environment="HOME=/home/platewire"
 Environment="HERMES_HOME=$HERMES_HOME"
+# The listener starts the office agent by name, so `hermes` must be on PATH.
+Environment="PATH=/home/platewire/.local/bin:/home/platewire/.hermes/hermes-agent/venv/bin:/home/platewire/.hermes/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=/usr/bin/python3 $DESK/scripts/office_webhook.py --port 8645
 Restart=always
 RestartSec=5
