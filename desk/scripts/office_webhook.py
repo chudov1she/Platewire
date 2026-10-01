@@ -39,6 +39,8 @@ RUNTIME = Path(os.environ.get("PLATEWIRE_RUNTIME") or (ROOT / "runtime"))
 LOG = RUNTIME / "webhook.log"
 RUNS = RUNTIME / "runs"
 
+LEDGER = RUNTIME / "ledger.jsonl"
+
 # (game_id, fingerprint) seen recently — the collector retries and re-emits.
 SEEN: dict[str, float] = {}
 SEEN_LOCK = threading.Lock()
@@ -100,6 +102,57 @@ def _agent_command(prompt: str) -> list[str]:
     return [binary, "chat", "-q", prompt]
 
 
+def _ledger_lines_for(game_id: str) -> int:
+    if not LEDGER.exists():
+        return 0
+    count = 0
+    with LEDGER.open("r", encoding="utf-8-sig", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                if json.loads(line).get("game_id") == game_id:
+                    count += 1
+            except json.JSONDecodeError:
+                continue
+    return count
+
+
+def _worker_command(game_id: str, reason: str, stage: str) -> list[str]:
+    script = ROOT / "scripts" / "run_game.py"
+    return [
+        os.environ.get("PLATEWIRE_PYTHON", "").strip() or "python3",
+        str(script),
+        "--game-id",
+        game_id,
+        "--reason",
+        reason or "manual",
+        "--stage",
+        stage or "prematch",
+    ]
+
+
+def run_direct_worker(game_id: str, reason: str, stage: str) -> str:
+    """Fallback: the agent session ended without a ledger row — run the worker ourselves."""
+    log(f"fallback worker start game={game_id} reason={reason} stage={stage}")
+    try:
+        proc = subprocess.run(
+            _worker_command(game_id, reason, stage),
+            capture_output=True,
+            text=True,
+            timeout=int(os.environ.get("PLATEWIRE_WORKER_TIMEOUT", "600") or 600),
+            env=dict(os.environ),
+            cwd=str(ROOT.parent),
+        )
+        tail = (proc.stdout or "")[-2000:]
+        log(f"fallback worker done game={game_id} rc={proc.returncode}")
+        return tail
+    except Exception as exc:  # noqa: BLE001 - the listener must not die
+        log(f"fallback worker failed game={game_id}: {exc}")
+        return ""
+
+
 def run_agent(payload: dict[str, Any]) -> None:
     game_id = str(payload.get("game_id", ""))
     matchup = str(payload.get("matchup", game_id))
@@ -113,6 +166,9 @@ def run_agent(payload: dict[str, Any]) -> None:
 
     env = dict(os.environ)
     timeout = int(os.environ.get("PLATEWIRE_AGENT_TIMEOUT", "900") or 900)
+    before = _ledger_lines_for(game_id)
+    output = ""
+    note = ""
     try:
         proc = subprocess.run(
             _agent_command(prompt),
@@ -122,18 +178,29 @@ def run_agent(payload: dict[str, Any]) -> None:
             env=env,
             cwd=str(ROOT.parent if ROOT.name == "desk" else ROOT),
         )
-        out_path.write_text(
-            f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}\n",
-            encoding="utf-8",
-        )
+        output = f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}\n"
+        note = f"agent rc={proc.returncode}"
         log(f"done {matchup} rc={proc.returncode} log={out_path}")
     except subprocess.TimeoutExpired:
-        out_path.write_text(f"timeout after {timeout}s\n", encoding="utf-8")
+        note = f"agent timeout after {timeout}s"
+        output = f"timeout after {timeout}s\n"
         log(f"timeout {matchup} after {timeout}s log={out_path}")
     except Exception as exc:  # noqa: BLE001 - the listener must not die
+        note = f"agent failed: {exc}"
         log(f"agent failed {matchup}: {exc}")
-    finally:
-        BUSY.discard(game_id)
+
+    # The agent may hand the work to a background subagent and exit before it
+    # finishes. The office must not depend on that: no new ledger row for this
+    # game means no worker ran, so run it here.
+    if _ledger_lines_for(game_id) <= before:
+        note += " | no ledger row, running the worker directly"
+        output += "\n--- fallback worker ---\n" + run_direct_worker(game_id, reason, stage)
+
+    try:
+        out_path.write_text(f"{note}\n{output}", encoding="utf-8")
+    except OSError as exc:
+        log(f"could not write {out_path}: {exc}")
+    BUSY.discard(game_id)
 
 
 class Handler(BaseHTTPRequestHandler):
