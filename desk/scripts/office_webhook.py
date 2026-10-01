@@ -262,7 +262,10 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Platewire office webhook")
-    parser.add_argument("--host", default="127.0.0.1")
+    # The collector posts from inside a container, so the listener cannot bind
+    # to loopback only: it must be reachable at the docker bridge gateway.
+    default_host = os.environ.get("PLATEWIRE_WEBHOOK_HOST", "").strip() or "127.0.0.1"
+    parser.add_argument("--host", default=default_host)
     parser.add_argument("--port", type=int, default=8645)
     args = parser.parse_args()
 

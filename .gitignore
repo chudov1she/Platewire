@@ -31,3 +31,7 @@ backend/src/generated/
 # Frontend
 frontend/next-env.d.ts
 frontend/.vercel/
+
+# Local DB dumps (large, never in git)
+*.sql
+platewire-local.sql

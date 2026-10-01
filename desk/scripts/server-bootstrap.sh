@@ -46,7 +46,7 @@ WorkingDirectory=$DESK
 EnvironmentFile=$OFFICE_ENV
 Environment="HOME=/home/platewire"
 Environment="HERMES_HOME=$HERMES_HOME"
-ExecStart=/usr/bin/python3 $DESK/scripts/office_webhook.py --host 127.0.0.1 --port 8645
+ExecStart=/usr/bin/python3 $DESK/scripts/office_webhook.py --port 8645
 Restart=always
 RestartSec=5
 StandardOutput=journal

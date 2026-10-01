@@ -94,7 +94,8 @@ AI_CURATION_CRON_ENABLED=false
 MCP_SERVICE_TOKEN=$MCP_TOKEN
 
 # Office dispatcher: collector -> desk/scripts/office_webhook.py -> Hermes agent.
-HERMES_WEBHOOK_URL=http://127.0.0.1:8645/webhooks/platewire
+# host.docker.internal is provided by docker-compose.backend.yml (host-gateway).
+HERMES_WEBHOOK_URL=http://host.docker.internal:8645/webhooks/platewire
 HERMES_WEBHOOK_SECRET=$HOOK_SECRET
 
 # Telegram stays with the Hermes gateway (platewire-gateway.service), never here.
@@ -112,9 +113,21 @@ PLATEWIRE_PASSWORD=$ADMIN_PASS
 HERMES_HOME=/home/platewire/.hermes
 PLATEWIRE_RUNTIME=$DESK/runtime
 PLATEWIRE_WEBHOOK_SECRET=$HOOK_SECRET
+# The collector posts from inside a container: accept the docker bridge, never
+# the public interface (the firewall rule below is scoped to the bridge subnet).
+PLATEWIRE_WEBHOOK_HOST=0.0.0.0
+PLATEWIRE_PYTHON=/usr/bin/python3
 PLATEWIRE_AGENT_TIMEOUT=900
+PLATEWIRE_WORKER_TIMEOUT=600
+PLATEWIRE_SKIP_TELEGRAM=0
 ENV
 chmod 600 "$DESK/.env.office"
+
+# ufw must pass the collector's loopback-to-bridge traffic on the listener port.
+if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "^Status: active"; then
+  ufw allow from 172.16.0.0/12 to any port 8645 proto tcp comment 'platewire office webhook (docker bridge)' >/dev/null 2>&1 || true
+  echo "== ufw: allowed 8645 from the docker bridge subnets only"
+fi
 
 cat > "$ACCESS" <<TXT
 Platewire on $(hostname) — written $(date -Iseconds)
