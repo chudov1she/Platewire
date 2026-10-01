@@ -67,11 +67,6 @@ export class GamesSyncService {
     );
     const nextStart = new Date(game.gameDate);
 
-    const existing = await this.prisma.game.findUnique({
-      where: { mlbGamePk: game.gamePk },
-      select: { id: true, gameDateUtc: true },
-    });
-
     await this.prisma.game.upsert({
       where: { mlbGamePk: game.gamePk },
       create: {
@@ -118,19 +113,6 @@ export class GamesSyncService {
         sourceUpdatedAt: new Date(),
       },
     });
-
-    // PPD → makeup keeps gameId; wipe stale TG fingerprint so T−60 re-alerts.
-    if (
-      existing &&
-      Math.abs(existing.gameDateUtc.getTime() - nextStart.getTime()) > 60_000
-    ) {
-      await this.prisma.telegramNotifyState.deleteMany({
-        where: { gameId: existing.id },
-      });
-      this.logger.log(
-        `Cleared telegram notify state after reschedule pk=${game.gamePk}`,
-      );
-    }
 
     return true;
   }

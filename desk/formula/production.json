@@ -1,0 +1,5 @@
+{
+  "version": "v45.1",
+  "value_threshold": 65,
+  "overround": 1.05
+}

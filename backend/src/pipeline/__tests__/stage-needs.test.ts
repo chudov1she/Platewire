@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
-  hasPendingLedgerDecision,
   inPrematchWindow,
   needsStageWatch,
+  ODDS_REFRESH_MS,
   stagesNeedingFreshCapture,
 } from '../stage-needs.js';
 
 describe('stagesNeedingFreshCapture', () => {
   const start = new Date('2026-07-30T12:00:00.000Z');
 
-  it('prematch required inside T-60m until ok secured', () => {
+  it('prematch required inside T-60m until a recent ok snapshot', () => {
     const now = new Date('2026-07-30T11:15:00.000Z');
     assert.deepEqual(
       stagesNeedingFreshCapture({
@@ -28,9 +28,37 @@ describe('stagesNeedingFreshCapture', () => {
         inning: null,
         gameDateUtc: start,
         now,
-        snapshots: [{ stage: 'prematch', locked: true, ok: true }],
+        snapshots: [
+          {
+            stage: 'prematch',
+            locked: true,
+            ok: true,
+            fetchedAt: new Date(now.getTime() - 5_000),
+          },
+        ],
       }),
       [],
+    );
+  });
+
+  it('refreshes prematch again after the refresh gap even if a prior snap is locked', () => {
+    const now = new Date('2026-07-30T11:15:00.000Z');
+    assert.deepEqual(
+      stagesNeedingFreshCapture({
+        status: 'PREVIEW',
+        inning: null,
+        gameDateUtc: start,
+        now,
+        snapshots: [
+          {
+            stage: 'prematch',
+            locked: true,
+            ok: true,
+            fetchedAt: new Date(now.getTime() - ODDS_REFRESH_MS - 1_000),
+          },
+        ],
+      }),
+      ['prematch'],
     );
   });
 
@@ -49,7 +77,7 @@ describe('stagesNeedingFreshCapture', () => {
     );
   });
 
-  it('LIVE last-chance prematch if still missing before inn1', () => {
+  it('LIVE early window still captures prematch', () => {
     assert.deepEqual(
       stagesNeedingFreshCapture({
         status: 'LIVE',
@@ -60,31 +88,38 @@ describe('stagesNeedingFreshCapture', () => {
     );
   });
 
-  it('catch-up 0→2 needs inn1 then inn2 as separate dues', () => {
+  it('live after two innings refreshes only the current inn2 window', () => {
     const due = stagesNeedingFreshCapture({
       status: 'LIVE',
       inning: 3,
       snapshots: [{ stage: 'prematch', locked: true, ok: true }],
     });
-    assert.deepEqual(due, ['inn1', 'inn2']);
+    assert.deepEqual(due, ['inn2']);
   });
 
-  it('skips secured inn1', () => {
+  it('skips a fresh inn2 snapshot and ignores older locked inn1', () => {
+    const now = new Date('2026-07-30T13:00:00.000Z');
     assert.deepEqual(
       stagesNeedingFreshCapture({
         status: 'LIVE',
         inning: 3,
+        now,
         snapshots: [
-          { stage: 'prematch', locked: true, ok: true },
-          { stage: 'inn1', locked: true, ok: true },
-          { stage: 'inn2', locked: false, ok: false },
+          { stage: 'prematch', locked: true, ok: true, fetchedAt: now },
+          { stage: 'inn1', locked: true, ok: true, fetchedAt: now },
+          {
+            stage: 'inn2',
+            locked: false,
+            ok: true,
+            fetchedAt: new Date(now.getTime() - 5_000),
+          },
         ],
       }),
-      ['inn2'],
+      [],
     );
   });
 
-  it('backs off failed odds scrape for 90s then will retry', () => {
+  it('backs off a failed odds scrape for 90s then will retry', () => {
     const now = new Date('2026-07-30T12:10:00.000Z');
     const due = stagesNeedingFreshCapture({
       status: 'LIVE',
@@ -102,52 +137,26 @@ describe('stagesNeedingFreshCapture', () => {
     });
     assert.deepEqual(due, []);
   });
-});
 
-describe('hasPendingLedgerDecision', () => {
-  it('true when prematch odds locked but no ledger row', () => {
-    assert.equal(
-      hasPendingLedgerDecision({
-        snapshots: [{ stage: 'prematch', locked: true, ok: true }],
-        ledgerTracks: [],
-        stages: ['prematch'],
+  it('does not capture a final game', () => {
+    assert.deepEqual(
+      stagesNeedingFreshCapture({
+        status: 'FINAL',
+        inning: 9,
+        snapshots: [],
       }),
-      true,
-    );
-  });
-
-  it('false once prematch ledger exists', () => {
-    assert.equal(
-      hasPendingLedgerDecision({
-        snapshots: [{ stage: 'prematch', locked: true, ok: true }],
-        ledgerTracks: ['prematch'],
-        stages: ['prematch'],
-      }),
-      false,
-    );
-  });
-
-  it('false when odds not locked yet', () => {
-    assert.equal(
-      hasPendingLedgerDecision({
-        snapshots: [{ stage: 'prematch', locked: false, ok: true }],
-        ledgerTracks: [],
-        stages: ['prematch'],
-      }),
-      false,
+      [],
     );
   });
 });
 
 describe('needsStageWatch', () => {
-  it('ignores PREVIEW', () => {
-    assert.equal(
-      needsStageWatch({ status: 'PREVIEW', snapshots: [] }),
-      false,
-    );
+  it('ignores PREVIEW and FINAL', () => {
+    assert.equal(needsStageWatch({ status: 'PREVIEW', snapshots: [] }), false);
+    assert.equal(needsStageWatch({ status: 'FINAL', snapshots: [] }), false);
   });
 
-  it('watches LIVE until required bets secured', () => {
+  it('watches LIVE even after every stage already has a snapshot', () => {
     assert.equal(needsStageWatch({ status: 'LIVE', snapshots: [] }), true);
     assert.equal(
       needsStageWatch({
@@ -158,7 +167,7 @@ describe('needsStageWatch', () => {
           { stage: 'inn2', locked: true, ok: true },
         ],
       }),
-      false,
+      true,
     );
   });
 });

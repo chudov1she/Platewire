@@ -4,6 +4,11 @@ export type StageWriteDecision =
   | { action: 'write'; lockAfter: boolean; lockPrematch: boolean }
   | { action: 'skip'; reason: string };
 
+/**
+ * A successful extract is always stored as a new snapshot.
+ * `lockAfter` stays false: lines keep moving until the game is final.
+ * `existingLocked` is ignored so an older row cannot freeze the stage.
+ */
 export function decideF5StageWrite(opts: {
   stage: F5OddsStage;
   existingLocked: boolean;
@@ -12,30 +17,18 @@ export function decideF5StageWrite(opts: {
   gameStatus: string;
   completedInnings: number;
 }): StageWriteDecision {
-  const { stage, existingLocked, extractOk, force, gameStatus, completedInnings } =
-    opts;
+  void opts.stage;
+  void opts.existingLocked;
+  void opts.gameStatus;
+  void opts.completedInnings;
 
-  if (existingLocked && !force) {
-    return { action: 'skip', reason: 'stage_locked' };
-  }
-
-  if (!extractOk && !force) {
+  if (!opts.extractOk && !opts.force) {
     return { action: 'skip', reason: 'extract_incomplete' };
   }
 
-  if (stage === 'prematch') {
-    // First successful prematch IS the bet — lock immediately.
-    return {
-      action: 'write',
-      lockAfter: true,
-      lockPrematch: false,
-    };
-  }
-
-  // inn1 / inn2: lock immediately on successful write
   return {
     action: 'write',
-    lockAfter: true,
-    lockPrematch: true,
+    lockAfter: false,
+    lockPrematch: false,
   };
 }

@@ -24,6 +24,18 @@ PLATEWIRE_LOGIN=admin
 PLATEWIRE_PASSWORD=admin
 ```
 
+MCP (same collector, no login). Put this in `$HERMES_HOME/config.yaml`. The route stays down until `MCP_SERVICE_TOKEN` is set on the Nest process. The token is the last path segment.
+
+```yaml
+mcp_servers:
+  platewire:
+    url: "http://localhost:8000/mcp/yfB-svqAuNHDxcSX7M8OaQ0hKMBBGxsug8zJQX7CEHY"
+```
+
+Tools: `list_slate`, `get_game`, `get_pack`, `search`, `get_player`, `get_official`, `get_odds`, `sync_slate`, `refresh_game`, `refresh_odds`, `refresh_context`, `refresh_player`, `pipeline_status`.
+
+The Python client in `platewire-f5-engine` still uses HTTP login. `execute_code` cannot call MCP tools.
+
 Restart Hermes (or start a **new** chat) so skills are discovered.
 
 Preload:

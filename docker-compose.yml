@@ -1,7 +1,6 @@
-# Stack: nginx → frontend + /api → backend + postgres
+# Stack: nginx → backend collector + postgres
 # Usage:
 #   cp .env.docker.example .env.docker
-#   # fill AI_API_KEY / TELEGRAM_* as needed
 #   docker compose --env-file .env.docker up --build
 #
 # Prod domain: http://baseballai.mooo.com  (HTTP_PORT=80 in .env.docker)
@@ -44,25 +43,10 @@ services:
     expose:
       - "8000"
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      - backend
-    environment:
-      BACKEND_URL: http://backend:8000
-      PORT: "3000"
-      HOSTNAME: 0.0.0.0
-    expose:
-      - "3000"
-
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
-      - frontend
       - backend
     ports:
       - "${HTTP_PORT:-8080}:80"

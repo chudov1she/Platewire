@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { UmpScorecardsService } from '../context/ump-scorecards.service.js';
+import { OfficeDeskService } from '../office/office-desk.service.js';
 import { GamePipelineService } from './game-pipeline.service.js';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class PipelineScheduler implements OnModuleInit {
   constructor(
     private readonly pipeline: GamePipelineService,
     private readonly umpScorecards: UmpScorecardsService,
+    private readonly desk: OfficeDeskService,
   ) {}
 
   /**
@@ -25,20 +27,31 @@ export class PipelineScheduler implements OnModuleInit {
 
   private async bootstrapOnce() {
     try {
-      const ump = await this.umpScorecards.ensureFresh(false);
-      this.logger.log(
-        ump.skipped
-          ? 'bootstrap umpscorecards skipped (fresh)'
-          : `bootstrap umpscorecards upserted=${ump.upserted}`,
-      );
+      if (await this.desk.isEnabled('umpscorecards')) {
+        const ump = await this.umpScorecards.ensureFresh(false);
+        this.logger.log(
+          ump.skipped
+            ? 'bootstrap umpscorecards skipped (fresh)'
+            : `bootstrap umpscorecards upserted=${ump.upserted}`,
+        );
+      }
     } catch (err) {
       this.logger.warn(
         `bootstrap umpscorecards: ${err instanceof Error ? err.message : err}`,
       );
     }
     try {
-      await this.pipeline.tickUniverse('slate');
-      this.logger.log('bootstrap slate done');
+      await this.desk.refreshHttpSources();
+    } catch (err) {
+      this.logger.warn(
+        `bootstrap sources: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+    try {
+      if (await this.desk.isEnabled('mlb_schedule')) {
+        await this.pipeline.tickUniverse('slate');
+        this.logger.log('bootstrap slate done');
+      }
     } catch (err) {
       this.logger.warn(
         `bootstrap slate: ${err instanceof Error ? err.message : err}`,
@@ -50,6 +63,7 @@ export class PipelineScheduler implements OnModuleInit {
   @Interval(10 * 60 * 1000)
   async slateTick() {
     if (!this.pipeline.isEnabled()) return;
+    if (!(await this.desk.isEnabled('mlb_schedule'))) return;
     try {
       await this.pipeline.tickUniverse('slate');
       await this.pipeline.tickUniverse('final_probe');
@@ -67,6 +81,7 @@ export class PipelineScheduler implements OnModuleInit {
   @Interval(2 * 60 * 1000)
   async prematchTick() {
     if (!this.pipeline.isEnabled()) return;
+    if (!(await this.desk.isEnabled('winline'))) return;
     try {
       await this.pipeline.tickUniverse('prematch');
     } catch (err) {
@@ -83,6 +98,7 @@ export class PipelineScheduler implements OnModuleInit {
   @Interval(60 * 1000)
   async stageWatchTick() {
     if (!this.pipeline.isEnabled()) return;
+    if (!(await this.desk.isEnabled('winline'))) return;
     try {
       await this.pipeline.tickUniverse('stage_watch');
     } catch (err) {
@@ -99,6 +115,7 @@ export class PipelineScheduler implements OnModuleInit {
   @Interval(30 * 1000)
   async liveScoresTick() {
     if (!this.pipeline.isEnabled()) return;
+    if (!(await this.desk.isEnabled('live_scores'))) return;
     try {
       await this.pipeline.tickLiveScores();
     } catch (err) {
@@ -113,6 +130,7 @@ export class PipelineScheduler implements OnModuleInit {
   async contextRecalcTick() {
     if (!this.pipeline.isEnabled()) return;
     try {
+      await this.desk.refreshHttpSources();
       await this.pipeline.tickContextRecalc();
     } catch (err) {
       this.logger.warn(
@@ -125,6 +143,7 @@ export class PipelineScheduler implements OnModuleInit {
   @Interval(6 * 60 * 60 * 1000)
   async umpScorecardsTick() {
     if (!this.pipeline.isEnabled()) return;
+    if (!(await this.desk.isEnabled('umpscorecards'))) return;
     try {
       const r = await this.umpScorecards.ensureFresh(false);
       if (!r.skipped) {

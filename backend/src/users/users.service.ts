@@ -175,46 +175,6 @@ export class UsersService implements OnModuleInit {
     return this.sanitize(updated);
   }
 
-  async upsertFromTelegram(data: {
-    telegramId: string;
-    telegramUsername?: string;
-    telegramFirstName?: string;
-    telegramLastName?: string;
-    telegramPhotoUrl?: string;
-    displayName?: string;
-    avatarUrl?: string;
-  }): Promise<User> {
-    const existing = await this.findByTelegramId(data.telegramId);
-    if (existing) {
-      return this.prisma.user.update({
-        where: { id: existing.id },
-        data: {
-          telegramUsername:
-            data.telegramUsername ?? existing.telegramUsername,
-          telegramFirstName:
-            data.telegramFirstName ?? existing.telegramFirstName,
-          telegramLastName: data.telegramLastName ?? existing.telegramLastName,
-          telegramPhotoUrl: data.telegramPhotoUrl ?? existing.telegramPhotoUrl,
-          displayName: data.displayName ?? existing.displayName,
-          avatarUrl: data.avatarUrl ?? existing.avatarUrl,
-        },
-      });
-    }
-
-    return this.prisma.user.create({
-      data: {
-        telegramId: data.telegramId,
-        telegramUsername: data.telegramUsername,
-        telegramFirstName: data.telegramFirstName,
-        telegramLastName: data.telegramLastName,
-        telegramPhotoUrl: data.telegramPhotoUrl,
-        displayName: data.displayName,
-        avatarUrl: data.avatarUrl,
-        status: UserStatus.GUEST,
-      },
-    });
-  }
-
   async validatePassword(user: User, password: string): Promise<boolean> {
     if (!user.passwordHash) {
       return false;

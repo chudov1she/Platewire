@@ -28,7 +28,6 @@ model User {
   createdByAdminId  String?
   createdByAdmin    User?      @relation("UserCreatedBy", fields: [createdByAdminId], references: [id])
   createdUsers      User[]     @relation("UserCreatedBy")
-  chatMessages      AgentChatMessage[]
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 }
@@ -103,8 +102,7 @@ model Game {
   f5OddsSnapshots  F5OddsSnapshot[]
   gameOfficials    GameOfficial[]
   pipelineEvents   PipelineEvent[]
-  ledgerEntries    F5LedgerEntry[]
-  telegramNotifyState TelegramNotifyState?
+  officeCursor     OfficeCursor?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -411,14 +409,73 @@ model F5OddsSnapshot {
   handicapsJson    Json
   mainTotalJson    Json?
   mainHandicapJson Json?
+  /// Full classified board: every priced line, not only the F5 main quotes.
+  marketsJson      Json?
   ok               Boolean
   rawMarketCount   Int      @default(0)
   missingJson      Json?
   fetchedAt        DateTime @default(now())
   createdAt        DateTime @default(now())
 
-  @@unique([gameId, stage])
+  @@index([gameId, stage, fetchedAt])
   @@index([gameId, fetchedAt])
+}
+
+model OfficeCursor {
+  gameId    String   @id
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  windowKey String?
+  lineupKey String?
+  stageKey  String?
+  finalKey  String?
+  updatedAt DateTime @updatedAt
+}
+
+model FormulaVersion {
+  id             String              @id @default(uuid())
+  version        String              @unique
+  valueThreshold Float
+  overround      Float
+  constantsJson  Json
+  notes          String?
+  createdAt      DateTime            @default(now())
+  production     FormulaProduction?
+}
+
+model FormulaProduction {
+  id        Int            @id @default(1)
+  versionId String         @unique
+  version   FormulaVersion @relation(fields: [versionId], references: [id])
+  updatedAt DateTime       @updatedAt
+}
+
+model CollectorSource {
+  key         String    @id
+  title       String
+  adapter     String
+  enabled     Boolean   @default(true)
+  configJson  Json
+  notes       String?
+  lastStatus  String?
+  lastPayload Json?
+  lastRunAt   DateTime?
+  updatedAt   DateTime  @updatedAt
+}
+
+model OfficeRun {
+  id         String    @id @default(uuid())
+  gameId     String
+  matchup    String?
+  reason     String
+  stage      String
+  status     String
+  formula    String?
+  summary    String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([startedAt])
+  @@index([gameId, startedAt])
 }
 
 model PipelineEvent {
@@ -438,130 +495,3 @@ model PipelineEvent {
   @@index([createdAt])
 }
 
-/// Immutable, versioned quant formula (v42 engine + editable overlay).
-model FormulaVersion {
-  id              String            @id @default(uuid())
-  versionLabel    String            @unique
-  base            String            @default("v42")
-  specJson        Json
-  notes           String?
-  createdBy       String            @default("system")
-  createdAt       DateTime          @default(now())
-  production      FormulaProduction?
-  proposals       AgentProposal[]
-  ledgerEntries   F5LedgerEntry[]
-
-  @@index([createdAt])
-}
-
-/// Singleton pointer to the currently active FormulaVersion.
-model FormulaProduction {
-  id        Int            @id @default(1)
-  versionId String         @unique
-  version   FormulaVersion @relation(fields: [versionId], references: [id])
-  updatedAt DateTime       @updatedAt
-}
-
-/// AI curation-agent proposal to patch the production FormulaSpec. Human-apply only.
-model AgentProposal {
-  id                      String          @id @default(uuid())
-  status                  String          @default("proposed")
-  title                   String
-  rationale               String
-  patchJson               Json
-  baselineVersionId       String
-  baselineMetricsJson     Json
-  proposedMetricsJson     Json
-  createdFormulaVersionId String?         @unique
-  createdFormulaVersion   FormulaVersion? @relation(fields: [createdFormulaVersionId], references: [id])
-  appliedAt               DateTime?
-  createdAt               DateTime        @default(now())
-  updatedAt               DateTime        @updatedAt
-
-  @@index([status, createdAt])
-}
-
-/// One AI decision (bet|pass) per (gameId, track) — the factual ledger of the analytics desk.
-model F5LedgerEntry {
-  id                  String          @id @default(uuid())
-  gameId              String
-  game                Game            @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  track               String
-  action              String
-  pickMarket          String?
-  pickSide            String?
-  pickLine            Float?
-  decimalOdds         Float?
-  modelProb           Float?
-  valuePct            Float?
-  roiPct              Float?
-  confidenceTier      String?
-  stakeUnits          Float?
-  formulaVersionId    String
-  formulaVersion      FormulaVersion  @relation(fields: [formulaVersionId], references: [id])
-  signalsJson         Json?
-  dossierDigestJson   Json?
-  riskFlags           String[]        @default([])
-  rationale           String?
-  /// Short AI summary for Telegram (1–3 sentences); full detail stays in rationale.
-  notifyBrief         String?
-  captureReason       String?
-  lineupFingerprint   String?
-  spFingerprint       String?
-  aiTraceId           String?         @unique
-  aiTrace             AiDecisionTrace? @relation(fields: [aiTraceId], references: [id])
-  resultStatus        String          @default("pending")
-  /// When true, entry stays in the journal but is omitted from ROI/equity/stats.
-  excludedFromStats   Boolean         @default(false)
-  f5HomeRuns          Int?
-  f5AwayRuns          Int?
-  profitUnits         Float?
-  settledAt           DateTime?
-  capturedAt          DateTime        @default(now())
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-
-  @@unique([gameId, track])
-  @@index([resultStatus])
-  @@index([track, capturedAt])
-}
-
-/// Dedupes Telegram bet alerts per game (stage / recalc fingerprint).
-model TelegramNotifyState {
-  id          String   @id @default(uuid())
-  gameId      String   @unique
-  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  fingerprint String
-  payloadJson Json?
-  lastSentAt  DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-/// Full audit trail (prompt + tool calls + raw output) for one Decision-agent call.
-model AiDecisionTrace {
-  id            String         @id @default(uuid())
-  gameId        String
-  track         String
-  promptJson    Json
-  rawOutputJson Json
-  model         String
-  latencyMs     Int?
-  createdAt     DateTime       @default(now())
-  ledgerEntry   F5LedgerEntry?
-
-  @@index([gameId, track])
-}
-
-/// One turn (user or assistant) of a per-user conversation with the AI desk agent.
-model AgentChatMessage {
-  id            String   @id @default(uuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role          String
-  content       String
-  toolsUsedJson Json?
-  createdAt     DateTime @default(now())
-
-  @@index([userId, createdAt])
-}

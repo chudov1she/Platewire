@@ -6,10 +6,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
 from typing import Any
+
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
 
 
 def env(name: str, default: str | None = None) -> str | None:
@@ -21,6 +24,64 @@ def env(name: str, default: str | None = None) -> str | None:
 
 def base_url() -> str:
     return (env("PLATEWIRE_BASE_URL", "http://localhost:8000/api/v1") or "").rstrip("/")
+
+
+class RobustJSONParser:
+    """Clean control characters and recover the first JSON object from a noisy pack."""
+
+    @staticmethod
+    def _clean(text: str) -> str:
+        text = text.replace("\ufeff", "")
+        text = _CONTROL_RE.sub("", text)
+        text = re.sub(r"[\u200B-\u200D\uFEFF]", "", text)
+        return text.strip()
+
+    @staticmethod
+    def _first_balanced(text: str, open_ch: str, close_ch: str) -> str | None:
+        start = text.find(open_ch)
+        if start == -1:
+            return None
+        depth = 0
+        in_str = False
+        escape = False
+        for i, c in enumerate(text[start:], start=start):
+            if escape:
+                escape = False
+                continue
+            if c == "\\":
+                escape = True
+                continue
+            if c == '"':
+                in_str = not in_str
+                continue
+            if in_str:
+                continue
+            if c == open_ch:
+                depth += 1
+            elif c == close_ch:
+                depth -= 1
+                if depth == 0:
+                    return text[start : i + 1]
+        return None
+
+    @classmethod
+    def parse(cls, text: str) -> Any:
+        cleaned = cls._clean(text)
+        if not cleaned:
+            return None
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+        for open_ch, close_ch in (("{", "}"), ("[", "]")):
+            block = cls._first_balanced(cleaned, open_ch, close_ch)
+            if not block:
+                continue
+            try:
+                return json.loads(block)
+            except json.JSONDecodeError:
+                continue
+        raise json.JSONDecodeError("RobustJSONParser could not extract valid JSON", cleaned, 0)
 
 
 class PlatewireClient:

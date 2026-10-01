@@ -16,6 +16,7 @@ import {
   toMainTeamTotalsJson,
 } from './f5-extract.js';
 import { orientF5ToMlbHome } from './orient-f5.js';
+import { classifyBook, orientBook, type BookQuote } from './book.js';
 import {
   completedInnings,
   isF5OddsStage,
@@ -164,7 +165,7 @@ export class OddsService {
       forceRebind?: boolean;
       force?: boolean;
       stage?: F5OddsStage;
-      /** Pipeline may set stage without force; never rewrites locked without force. */
+      /** Pipeline may set stage without force. Each capture inserts a new row. */
       pipelineCapture?: boolean;
     } = {},
   ) {
@@ -188,25 +189,7 @@ export class OddsService {
       stage = opts.stage;
     }
 
-    const existing = await this.prisma.f5OddsSnapshot.findUnique({
-      where: { gameId_stage: { gameId, stage } },
-    });
-
-    const decisionPreview = decideF5StageWrite({
-      stage,
-      existingLocked: existing?.locked ?? false,
-      extractOk: true,
-      force,
-      gameStatus: game.status,
-      completedInnings: completedInnings(game.inning),
-    });
-
-    if (decisionPreview.action === 'skip' && decisionPreview.reason === 'stage_locked') {
-      return this.serializeF5Snap(existing!, game.mlbGamePk, {
-        skipped: true,
-        skip_reason: 'stage_locked',
-      });
-    }
+    const existing = await this.latestSnapshot(gameId, stage);
 
     // Always fresh scrape for this stage — never reuse another track's markets.
     const full = await this.fetchOddsForGame(gameId, {
@@ -217,6 +200,7 @@ export class OddsService {
     const rawExtracted = extractF5Markets(markets);
     const flipped = full.winline_flipped ?? false;
     const extracted = orientF5ToMlbHome(rawExtracted, flipped);
+    const book = orientBook(classifyBook(markets), flipped);
     const fetchedAt = new Date(full.captured_at);
 
     const decision = decideF5StageWrite({
@@ -232,39 +216,17 @@ export class OddsService {
       // Pipeline: record failed attempt so we backoff 90s then retry (guarantee loop).
       if (
         opts.pipelineCapture &&
-        decision.reason === 'extract_incomplete' &&
-        !(existing?.locked)
+        decision.reason === 'extract_incomplete'
       ) {
-        const failSnap = await this.prisma.f5OddsSnapshot.upsert({
-          where: { gameId_stage: { gameId, stage } },
-          create: {
+        const failSnap = await this.prisma.f5OddsSnapshot.create({
+          data: {
             gameId,
             stage,
             locked: false,
             winlineEventId: full.winline_event_id,
             flipped,
-            moneylineJson: extracted.moneyline ?? undefined,
-            totalsJson: extracted.totals,
-            handicapsJson: extracted.handicaps,
-            mainTotalJson: extracted.main_total ?? undefined,
-            mainHandicapJson: toMainTeamTotalsJson(extracted),
+            ...this.bookColumns(extracted, book),
             ok: false,
-            rawMarketCount: extracted.raw_f5_count,
-            missingJson: extracted.missing,
-            fetchedAt,
-          },
-          update: {
-            locked: false,
-            winlineEventId: full.winline_event_id,
-            flipped,
-            moneylineJson: extracted.moneyline ?? undefined,
-            totalsJson: extracted.totals,
-            handicapsJson: extracted.handicaps,
-            mainTotalJson: extracted.main_total ?? undefined,
-            mainHandicapJson: toMainTeamTotalsJson(extracted),
-            ok: false,
-            rawMarketCount: extracted.raw_f5_count,
-            missingJson: extracted.missing,
             fetchedAt,
           },
         });
@@ -309,6 +271,7 @@ export class OddsService {
         main_total: extracted.main_total,
         main_handicap: extracted.main_handicap,
         main_team_totals: toMainTeamTotalsJson(extracted),
+        markets: book,
         missing: extracted.missing,
         skipped: true,
         skip_reason: decision.reason,
@@ -327,47 +290,18 @@ export class OddsService {
       return emptyPayload;
     }
 
-    const locked = decision.lockAfter;
-    const snap = await this.prisma.f5OddsSnapshot.upsert({
-      where: { gameId_stage: { gameId, stage } },
-      create: {
+    const snap = await this.prisma.f5OddsSnapshot.create({
+      data: {
         gameId,
         stage,
-        locked,
+        locked: false,
         winlineEventId: full.winline_event_id,
         flipped,
-        moneylineJson: extracted.moneyline ?? undefined,
-        totalsJson: extracted.totals,
-        handicapsJson: extracted.handicaps,
-        mainTotalJson: extracted.main_total ?? undefined,
-        mainHandicapJson: toMainTeamTotalsJson(extracted),
+        ...this.bookColumns(extracted, book),
         ok: extracted.ok,
-        rawMarketCount: extracted.raw_f5_count,
-        missingJson: extracted.missing,
-        fetchedAt,
-      },
-      update: {
-        locked,
-        winlineEventId: full.winline_event_id,
-        flipped,
-        moneylineJson: extracted.moneyline ?? undefined,
-        totalsJson: extracted.totals,
-        handicapsJson: extracted.handicaps,
-        mainTotalJson: extracted.main_total ?? undefined,
-        mainHandicapJson: toMainTeamTotalsJson(extracted),
-        ok: extracted.ok,
-        rawMarketCount: extracted.raw_f5_count,
-        missingJson: extracted.missing,
         fetchedAt,
       },
     });
-
-    if (decision.lockPrematch) {
-      await this.prisma.f5OddsSnapshot.updateMany({
-        where: { gameId, stage: 'prematch', locked: false },
-        data: { locked: true },
-      });
-    }
 
     const payload = {
       ...this.serializeF5Snap(snap, game.mlbGamePk),
@@ -391,7 +325,7 @@ export class OddsService {
   /**
    * Fresh scrape for exactly one stage (pipeline / catch-up).
    * Never copies markets from another stage.
-   * `force: true` rewrites an already-locked snapshot (lineup/SP recalc).
+   * Each call inserts a new snapshot; older rows stay as history.
    */
   async captureF5Stage(
     gameId: string,
@@ -419,9 +353,7 @@ export class OddsService {
       if (!isF5OddsStage(opts.stage)) {
         throw new HttpException('invalid stage', HttpStatus.BAD_REQUEST);
       }
-      const snap = await this.prisma.f5OddsSnapshot.findUnique({
-        where: { gameId_stage: { gameId, stage: opts.stage } },
-      });
+      const snap = await this.latestSnapshot(gameId, opts.stage);
       if (!snap) {
         throw new NotFoundException(`No F5 snapshot for stage=${opts.stage}`);
       }
@@ -430,25 +362,54 @@ export class OddsService {
 
     const rows = await this.prisma.f5OddsSnapshot.findMany({
       where: { gameId },
+      orderBy: { fetchedAt: 'desc' },
     });
     if (!rows.length) {
       throw new NotFoundException('No F5 odds snapshot for this game');
     }
 
-    const byStage = Object.fromEntries(
-      rows.map((r) => [r.stage, this.serializeF5Snap(r, game.mlbGamePk)]),
-    ) as Record<string, ReturnType<OddsService['serializeF5Snap']>>;
+    const latestByStage = new Map<string, (typeof rows)[number]>();
+    for (const row of [...rows].reverse()) {
+      latestByStage.set(row.stage, row);
+    }
+
+    const serialize = (row: (typeof rows)[number] | undefined) =>
+      row ? this.serializeF5Snap(row, game.mlbGamePk) : null;
 
     return {
       ok: true,
       game_id: gameId,
       mlb_game_pk: game.mlbGamePk,
       tracks: {
-        prematch: byStage.prematch ?? null,
-        inn1: byStage.inn1 ?? null,
-        inn2: byStage.inn2 ?? null,
+        prematch: serialize(latestByStage.get('prematch')),
+        inn1: serialize(latestByStage.get('inn1')),
+        inn2: serialize(latestByStage.get('inn2')),
       },
+      history: rows.slice(0, 200).map((row) => this.serializeF5Snap(row, game.mlbGamePk)),
     };
+  }
+
+  private bookColumns(
+    extracted: ReturnType<typeof extractF5Markets>,
+    book: BookQuote[],
+  ) {
+    return {
+      moneylineJson: extracted.moneyline ?? undefined,
+      totalsJson: extracted.totals,
+      handicapsJson: extracted.handicaps,
+      mainTotalJson: extracted.main_total ?? undefined,
+      mainHandicapJson: toMainTeamTotalsJson(extracted),
+      marketsJson: book,
+      rawMarketCount: book.length,
+      missingJson: extracted.missing,
+    };
+  }
+
+  private latestSnapshot(gameId: string, stage: string) {
+    return this.prisma.f5OddsSnapshot.findFirst({
+      where: { gameId, stage },
+      orderBy: { fetchedAt: 'desc' },
+    });
   }
 
   private serializeF5Snap(
@@ -463,6 +424,7 @@ export class OddsService {
       handicapsJson: unknown;
       mainTotalJson: unknown;
       mainHandicapJson: unknown;
+      marketsJson?: unknown;
       ok: boolean;
       missingJson: unknown;
       fetchedAt: Date;
@@ -483,6 +445,7 @@ export class OddsService {
       totals: snap.totalsJson,
       handicaps: snap.handicapsJson,
       main_total: snap.mainTotalJson,
+      markets: Array.isArray(snap.marketsJson) ? snap.marketsJson : [],
       main_team_totals: parseMainTeamTotalsJson(snap.mainHandicapJson),
       // Legacy handicap shape only (pre team_totals); new snaps store IT here.
       main_handicap: parseMainTeamTotalsJson(snap.mainHandicapJson)

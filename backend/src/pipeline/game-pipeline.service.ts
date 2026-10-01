@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '../generated/prisma/client.js';
 import { mlbScheduleDateKey } from '../common/time.js';
 import { ContextService } from '../context/context.service.js';
-import { completedInnings } from '../odds/f5-scope.js';
+import { completedInnings, f5IsComplete } from '../odds/f5-scope.js';
 import { OddsService } from '../odds/odds.service.js';
 import { GamesService } from '../games/games.service.js';
 import { GamesSyncService } from '../games/games-sync.service.js';
+import { OfficeDeskService } from '../office/office-desk.service.js';
+import { OfficeEventsService } from '../office/office-events.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { WeatherSyncService } from '../weather/weather-sync.service.js';
 import {
@@ -38,6 +40,8 @@ export class GamePipelineService {
     private readonly odds: OddsService,
     private readonly config: ConfigService,
     private readonly weather: WeatherSyncService,
+    private readonly office: OfficeEventsService,
+    private readonly desk: OfficeDeskService,
     private readonly context: ContextService,
   ) {}
 
@@ -73,18 +77,20 @@ export class GamePipelineService {
       const fresh = await this.prisma.game.findUnique({ where: { id: gameId } });
       if (!fresh) throw new NotFoundException('Game not found');
 
-      try {
-        await this.weather.syncGame(gameId);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        errors.push(`weather: ${msg}`);
-        await this.logEvent({
-          gameId,
-          mlbGamePk: fresh.mlbGamePk,
-          job: 'weather_sync',
-          status: 'error',
-          message: msg,
-        });
+      if (await this.desk.isEnabled('weather')) {
+        try {
+          await this.weather.syncGame(gameId);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          errors.push(`weather: ${msg}`);
+          await this.logEvent({
+            gameId,
+            mlbGamePk: fresh.mlbGamePk,
+            job: 'weather_sync',
+            status: 'error',
+            message: msg,
+          });
+        }
       }
 
       const snaps = await this.prisma.f5OddsSnapshot.findMany({
@@ -92,12 +98,14 @@ export class GamePipelineService {
         select: { stage: true, locked: true, ok: true, fetchedAt: true },
       });
 
-      const due = stagesNeedingFreshCapture({
-        status: fresh.status,
-        inning: fresh.inning,
-        gameDateUtc: fresh.gameDateUtc,
-        snapshots: snaps,
-      });
+      const due = (await this.desk.isEnabled('winline'))
+        ? stagesNeedingFreshCapture({
+            status: fresh.status,
+            inning: fresh.inning,
+            gameDateUtc: fresh.gameDateUtc,
+            snapshots: snaps,
+          })
+        : [];
 
       for (const stage of due) {
         try {
@@ -141,25 +149,27 @@ export class GamePipelineService {
         }
       }
 
-      try {
-        await this.context.refresh(gameId);
-        await this.logEvent({
-          gameId,
-          mlbGamePk: fresh.mlbGamePk,
-          job: 'context_refresh',
-          status: 'ok',
-          message: 'preview+features synced',
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        errors.push(`context_refresh: ${msg}`);
-        await this.logEvent({
-          gameId,
-          mlbGamePk: fresh.mlbGamePk,
-          job: 'context_refresh',
-          status: 'error',
-          message: msg,
-        });
+      if (await this.desk.isEnabled('savant')) {
+        try {
+          await this.context.refresh(gameId);
+          await this.logEvent({
+            gameId,
+            mlbGamePk: fresh.mlbGamePk,
+            job: 'context_refresh',
+            status: 'ok',
+            message: 'preview+features synced',
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          errors.push(`context_refresh: ${msg}`);
+          await this.logEvent({
+            gameId,
+            mlbGamePk: fresh.mlbGamePk,
+            job: 'context_refresh',
+            status: 'error',
+            message: msg,
+          });
+        }
       }
 
       const completed = completedInnings(fresh.inning);
@@ -176,6 +186,7 @@ export class GamePipelineService {
       this.logger.log(
         `pipeline tick pk=${fresh.mlbGamePk} status=${fresh.status} completed=${completed} due=[${due.join(',')}] captured=[${captured.join(',')}]`,
       );
+      await this.office.consider(gameId);
 
       return {
         ok: errors.length === 0,
@@ -286,6 +297,7 @@ export class GamePipelineService {
           if (!g) break;
           try {
             await this.games.refreshLive(g.mlbGamePk);
+            await this.office.consider(g.id);
             refreshed += 1;
           } catch (err) {
             failed += 1;
@@ -333,9 +345,11 @@ export class GamePipelineService {
     });
 
     let changed = 0;
+    const savant = await this.desk.isEnabled('savant');
     for (const g of games) {
       try {
-        await this.context.refresh(g.id);
+        if (savant) await this.context.refresh(g.id);
+        await this.office.consider(g.id);
         changed += 1;
         await this.logEvent({
           gameId: g.id,
@@ -394,7 +408,7 @@ export class GamePipelineService {
     await this.sync.syncDates([today, yesterday]);
   }
 
-  /** Refresh live feed for recently finished games (scores only — no settle). */
+  /** Refresh finished games and ask the office to grade any stake still open. */
   private async runFinalProbe() {
     const now = Date.now();
     const windowStart = new Date(now - 12 * 60 * 60 * 1000);
@@ -411,6 +425,7 @@ export class GamePipelineService {
     for (const g of games) {
       try {
         await this.games.refreshLive(g.mlbGamePk);
+        await this.office.consider(g.id);
         await this.logEvent({
           gameId: g.id,
           mlbGamePk: g.mlbGamePk,
@@ -429,6 +444,39 @@ export class GamePipelineService {
           message: msg,
         });
       }
+    }
+
+    await this.sweepOpenCursors();
+  }
+
+  /** Games we already tracked keep being graded after they leave the 12h window. */
+  private async sweepOpenCursors() {
+    const rows = await this.prisma.officeCursor.findMany({
+      where: {
+        OR: [{ finalKey: null }, { finalKey: { not: 'final' } }],
+      },
+      select: {
+        gameId: true,
+        game: {
+          select: { mlbGamePk: true, status: true, inning: true, gameDateUtc: true },
+        },
+      },
+    });
+    const staleBefore = Date.now() - 3 * 60 * 60 * 1000;
+    for (const row of rows) {
+      const game = row.game;
+      const old = game.gameDateUtc.getTime() < staleBefore;
+      const unfinished = game.status !== 'FINAL' && !f5IsComplete(game.inning);
+      if (old && unfinished) {
+        try {
+          await this.games.refreshLive(game.mlbGamePk);
+        } catch (err) {
+          this.logger.warn(
+            `settle refresh pk=${game.mlbGamePk}: ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
+      await this.office.consider(row.gameId);
     }
   }
 

@@ -4,12 +4,12 @@ import { AuthModule } from './auth/auth.module.js';
 import { ContextModule } from './context/context.module.js';
 import { GamesModule } from './games/games.module.js';
 import { HealthModule } from './health/health.module.js';
+import { McpModule } from './mcp/mcp.module.js';
 import { OddsModule } from './odds/odds.module.js';
 import { PackModule } from './pack/pack.module.js';
 import { PipelineModule } from './pipeline/pipeline.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { SavantModule } from './savant/savant.module.js';
-import { TelegramModule } from './telegram/telegram.module.js';
 import { UsersModule } from './users/users.module.js';
 import { WeatherModule } from './weather/weather.module.js';
 
@@ -26,8 +26,8 @@ import { WeatherModule } from './weather/weather.module.js';
     SavantModule,
     ContextModule,
     PackModule,
-    TelegramModule,
     PipelineModule,
+    McpModule.register(),
   ],
 })
 export class AppModule {}

@@ -41,7 +41,7 @@ describe('f5-scope', () => {
 });
 
 describe('decideF5StageWrite', () => {
-  it('skips locked without force', () => {
+  it('writes again even when an older snapshot was locked', () => {
     const d = decideF5StageWrite({
       stage: 'inn1',
       existingLocked: true,
@@ -50,10 +50,14 @@ describe('decideF5StageWrite', () => {
       gameStatus: 'LIVE',
       completedInnings: 1,
     });
-    assert.equal(d.action, 'skip');
+    assert.equal(d.action, 'write');
+    if (d.action === 'write') {
+      assert.equal(d.lockAfter, false);
+      assert.equal(d.lockPrematch, false);
+    }
   });
 
-  it('writes and locks inn1', () => {
+  it('writes inn1 without locking the stage', () => {
     const d = decideF5StageWrite({
       stage: 'inn1',
       existingLocked: false,
@@ -64,12 +68,12 @@ describe('decideF5StageWrite', () => {
     });
     assert.equal(d.action, 'write');
     if (d.action === 'write') {
-      assert.equal(d.lockAfter, true);
-      assert.equal(d.lockPrematch, true);
+      assert.equal(d.lockAfter, false);
+      assert.equal(d.lockPrematch, false);
     }
   });
 
-  it('prematch locks on first successful capture', () => {
+  it('prematch does not lock on capture', () => {
     const d = decideF5StageWrite({
       stage: 'prematch',
       existingLocked: false,
@@ -80,7 +84,7 @@ describe('decideF5StageWrite', () => {
     });
     assert.equal(d.action, 'write');
     if (d.action === 'write') {
-      assert.equal(d.lockAfter, true);
+      assert.equal(d.lockAfter, false);
     }
   });
 

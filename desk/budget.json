@@ -1,0 +1,9 @@
+{
+  "bank_units": 1000,
+  "max_per_game": 10,
+  "max_open_units": 60,
+  "unit": 10,
+  "day": null,
+  "day_pnl": 0,
+  "open": []
+}

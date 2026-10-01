@@ -4,6 +4,10 @@
 !.env.example
 !.env.docker.example
 
+# Office runtime: ledger, live budget, telegram target
+desk/runtime/
+desk/telegram.json
+
 # Scratch
 tmp/
 *.log

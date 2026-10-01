@@ -22,13 +22,14 @@ async function bootstrap() {
     exclude: [
       { path: 'docs', method: RequestMethod.GET },
       { path: 'openapi-json', method: RequestMethod.GET },
+      { path: 'mcp/:token', method: RequestMethod.ALL },
     ],
   });
 
   const config = new DocumentBuilder()
     .setTitle('Platewire API')
     .setDescription(
-      'MLB games, weather, and on-demand Winline odds. Join: mlb_game_pk ↔ winline_event_id.',
+      'MLB collector: games, players, weather, and Winline F5 lines. Read via /api/v1 or MCP /mcp/<token>.',
     )
     .setVersion('0.1.0')
     .build();

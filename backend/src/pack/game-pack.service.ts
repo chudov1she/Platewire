@@ -46,13 +46,15 @@ export class GamePackService {
     });
     if (!gameRow) throw new NotFoundException('Game not found');
 
-    const [{ game }, context, weather, oddsTracks, features] = await Promise.all([
+    const [{ game }, context, weather, oddsBundle, features] = await Promise.all([
       this.games.getById(gameId),
       this.context.getForGame(gameId, { autoSync: false }),
       this.weather.listForGame(gameId, { autoFetch: false }),
       this.loadOddsTracks(gameId),
       this.matchup.build(gameId),
     ]);
+
+    const oddsTracks = oddsBundle.tracks;
 
     const hasOdds = {
       prematch: Boolean(oddsTracks.prematch?.ok),
@@ -69,6 +71,11 @@ export class GamePackService {
     const umpReady =
       features.input_sources.ump_accuracy_above_x?.ready === true ||
       features.input_sources.ump_strike_zone_pct?.source === 'feature';
+
+    const extraSources = await this.prisma.collectorSource.findMany({
+      where: { adapter: 'http', enabled: true },
+      orderBy: { key: 'asc' },
+    });
 
     return {
       ok: true,
@@ -91,6 +98,7 @@ export class GamePackService {
       },
       odds: {
         tracks: oddsTracks,
+        history: oddsBundle.history,
       },
       features: {
         inputs: features.inputs,
@@ -106,6 +114,13 @@ export class GamePackService {
         weather_ready: weatherReady,
         ump_ready: umpReady,
       },
+      extra_sources: extraSources.map((source) => ({
+        key: source.key,
+        title: source.title,
+        last_status: source.lastStatus,
+        last_run_at: source.lastRunAt?.toISOString() ?? null,
+        payload: source.lastPayload,
+      })),
       as_of: {
         game_fetched_at: game.fetched_at,
         savant_preview_at: gameRow.savantPreview?.fetchedAt?.toISOString() ?? null,
@@ -179,19 +194,31 @@ export class GamePackService {
     return out;
   }
 
-  private async loadOddsTracks(gameId: string) {
+  private async loadOddsTracks(gameId: string): Promise<{
+    tracks: {
+      prematch: OddsTrack | null;
+      inn1: OddsTrack | null;
+      inn2: OddsTrack | null;
+    };
+    history: OddsTrack[];
+  }> {
+    const empty = {
+      tracks: { prematch: null, inn1: null, inn2: null },
+      history: [] as OddsTrack[],
+    };
     try {
       const payload = await this.odds.getLatestF5(gameId);
-      if ('tracks' in payload) {
-        return payload.tracks as {
+      if (!('tracks' in payload)) return empty;
+      return {
+        tracks: payload.tracks as {
           prematch: OddsTrack | null;
           inn1: OddsTrack | null;
           inn2: OddsTrack | null;
-        };
-      }
-      return { prematch: null, inn1: null, inn2: null };
+        },
+        history: (payload.history ?? []) as OddsTrack[],
+      };
     } catch {
-      return { prematch: null, inn1: null, inn2: null };
+      return empty;
     }
   }
 }
