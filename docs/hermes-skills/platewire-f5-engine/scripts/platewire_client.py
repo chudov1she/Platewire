@@ -23,7 +23,7 @@ def env(name: str, default: str | None = None) -> str | None:
 
 
 def base_url() -> str:
-    return (env("PLATEWIRE_BASE_URL", "http://localhost:8000/api/v1") or "").rstrip("/")
+    return (env("PLATEWIRE_BASE_URL", "http://127.0.0.1:8000/api/v1") or "").rstrip("/")
 
 
 class RobustJSONParser:

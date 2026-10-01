@@ -26,9 +26,10 @@ You **must run the script** for numbers â€” do not hand-wave Poisson or invent Î
 
 ## Run (required)
 
-```powershell
-python D:\Projects\Sergey\platewire\docs\hermes-skills\platewire-f5-engine\scripts\analyze_pack.py --pack pack.json --track prematch
-python D:\Projects\Sergey\platewire\docs\hermes-skills\platewire-f5-engine\scripts\analyze_pack.py --game-id <uuid> --track prematch
+```bash
+PY=/home/platewire/.hermes/skills/mlb/platewire-f5-engine/scripts
+python3 "$PY/analyze_pack.py" --pack pack.json --track prematch
+python3 "$PY/analyze_pack.py" --game-id <uuid> --track prematch
 ```
 
 Env: `PLATEWIRE_BASE_URL`, `PLATEWIRE_LOGIN`, `PLATEWIRE_PASSWORD` (see `platewire-api`).

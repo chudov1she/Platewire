@@ -1,6 +1,6 @@
 # Platewire `/api/v1` endpoints (collector)
 
-All routes below are under `PLATEWIRE_BASE_URL` (e.g. `http://localhost:8000/api/v1`).
+All routes below are under `PLATEWIRE_BASE_URL` (e.g. `http://127.0.0.1:8000/api/v1`).
 Unless noted, require `Authorization: Bearer <token>`.
 
 ## Auth

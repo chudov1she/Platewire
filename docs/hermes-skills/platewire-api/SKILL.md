@@ -31,7 +31,7 @@ Read from environment (preferred) or ask once and cache in-session:
 
 | Env | Default |
 |---|---|
-| `PLATEWIRE_BASE_URL` | `http://localhost:8000/api/v1` |
+| `PLATEWIRE_BASE_URL` | `http://127.0.0.1:8000/api/v1` |
 | `PLATEWIRE_LOGIN` | `admin` |
 | `PLATEWIRE_PASSWORD` | `admin` |
 
