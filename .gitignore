@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 !.env.docker.example
+!.env.office.example
 
 # Office runtime: ledger, live budget, telegram target
 desk/runtime/
@@ -12,6 +13,10 @@ desk/telegram.json
 tmp/
 *.log
 .DS_Store
+
+# Python bytecode
+__pycache__/
+*.py[cod]
 
 # Dependencies & build
 **/node_modules/
