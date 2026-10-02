@@ -313,7 +313,7 @@ def _day_report_message(summary: dict[str, Any], why: str) -> dict[str, Any]:
             game_rows.append(
                 [
                     _cell(str(item.get("matchup") or "")),
-                    _cell(f"{titles.get(item.get('result'), '')} · {market}{line_bit} {_side_label(item.get('side'))}".strip()),
+                    _cell(f"{titles.get(item.get('result'), '')} · {market}{line_bit} {_side_label(item.get('side'), item.get('matchup'))}".strip()),
                     _cell(_signed(float(item.get("pnl") or 0)), align="right"),
                 ]
             )
@@ -366,10 +366,45 @@ def send_day_report(today: str | None = None) -> dict[str, Any]:
     return {"telegram": sent, "summary": summary, "why": why}
 
 
-def _side_label(side: Any) -> str:
-    return {"home": "П1", "away": "П2", "draw": "Х", "over": "больше", "under": "меньше"}.get(
-        str(side), str(side or "")
-    )
+def _teams(matchup: Any) -> tuple[str, str]:
+    """(away, home) out of 'AWAY @ HOME'."""
+    text = str(matchup or "")
+    if "@" not in text:
+        return "", ""
+    away, home = text.split("@", 1)
+    return away.strip(), home.strip()
+
+
+def _side_label(side: Any, matchup: Any = None) -> str:
+    """Name the side so it cannot be read backwards.
+
+    'П1' alone read as Philadelphia while Winline counts the hosts first, so the
+    same card said 'П1 @ 2.42' and '0:5' and the two looked like one team. The
+    team abbreviation is always spelled out next to the number.
+    """
+    key = str(side or "")
+    away, home = _teams(matchup)
+    if key == "home":
+        return f"П1 (хозяева {home})" if home else "П1 (хозяева)"
+    if key == "away":
+        return f"П2 (гости {away})" if away else "П2 (гости)"
+    return {"draw": "Х (ничья)", "over": "больше", "under": "меньше"}.get(key, key)
+
+
+def _score_label(away: Any, home: Any, matchup: Any = None) -> str:
+    """Score hosts-first, the way Winline shows it, with both sides named.
+
+    The card used away:home while П1 means the hosts, so 'П1 ... 0:5' read as if
+    the team that won by five had scored nothing.
+    """
+    away_abbr, home_abbr = _teams(matchup)
+    try:
+        score = f"{int(home)}:{int(away)}"
+    except (TypeError, ValueError):
+        return ""
+    left = f"хозяева {home_abbr}" if home_abbr else "хозяева"
+    right = f"гости {away_abbr}" if away_abbr else "гости"
+    return f"{score} ({left} : {right})"
 
 
 def _board_message(budget: dict[str, Any], rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -454,7 +489,7 @@ def _board_message(budget: dict[str, Any], rows: list[dict[str, Any]] | None = N
             open_rows.append(
                 [
                     _cell(str(item.get("matchup") or "")),
-                    _cell(f"{market}{line_bit} {_side_label(item.get('side'))}".strip()),
+                    _cell(f"{market}{line_bit} {_side_label(item.get('side'), item.get('matchup'))}".strip()),
                     _cell(_num(float(item.get("stake") or 0)), align="right"),
                 ]
             )
@@ -936,15 +971,14 @@ def _settle_locked(budget: dict[str, Any], card: dict[str, Any]) -> dict[str, An
 def _settle_alert(row: dict[str, Any], why: str = "") -> dict[str, Any]:
     titles = {"win": "Выигрыш", "loss": "Проигрыш", "push": "Возврат", "void": "Возврат"}
     title = titles.get(str(row.get("result")), "Расчёт")
+    matchup = row.get("matchup")
     f5 = row.get("f5") or {}
     score = ""
     if f5:
-        score = f"{f5.get('away')}:{f5.get('home')}"
+        score = _score_label(f5.get("away"), f5.get("home"), matchup)
     line = row.get("line")
     line_bit = f" {line:g}" if isinstance(line, (int, float)) else ""
-    side = {"home": "П1", "away": "П2", "draw": "Х", "over": "больше", "under": "меньше"}.get(
-        str(row.get("side")), str(row.get("side") or "")
-    )
+    side = _side_label(row.get("side"), matchup)
     market = "тотал" if row.get("market") == "total" else "исход"
     note = "Первые пять иннингов не доиграны, ставка возвращена." if row.get("result") == "void" else ""
     rows = [
@@ -991,9 +1025,7 @@ def _alert(
 ) -> dict[str, Any]:
     line = bet.get("line")
     line_bit = f" {line:g}" if isinstance(line, (int, float)) else (f" {line}" if line else "")
-    side = {"home": "П1", "away": "П2", "draw": "Х", "over": "больше", "under": "меньше"}.get(
-        str(bet.get("side")), str(bet.get("side"))
-    )
+    side = _side_label(bet.get("side"), card.get("matchup"))
     market = "тотал" if bet.get("market") == "total" else "исход"
     stage = {"prematch": "до старта", "inn1": "после 1-го", "inn2": "после 2-го"}.get(
         str(card.get("stage")), str(card.get("stage") or "")
