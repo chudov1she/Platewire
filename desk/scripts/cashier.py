@@ -713,6 +713,8 @@ def post_card(card: dict[str, Any]) -> dict[str, Any]:
             "gaps": card.get("gaps") or [],
             "why": card.get("why"),
             "pass_why": card.get("pass_why"),
+            "line_age_s": card.get("line_age_s"),
+            "line_fresh": card.get("line_fresh"),
             "read": card.get("read") if isinstance(card.get("read"), dict) else None,
         }
         append_ledger(row)

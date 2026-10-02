@@ -10,6 +10,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -116,6 +117,64 @@ def repair(client: PlatewireClient, game_id: str, stage: str, missing: list[str]
             {"require_markets": False, "force": True, "stage": stage},
         )
     return notes
+
+
+def _odds_age_s(pack: dict[str, Any], stage: str) -> float | None:
+    """Age of the line the verdict would be based on, in seconds."""
+    as_of = (pack.get("as_of") or {}).get("odds") or {}
+    stamp = as_of.get(stage)
+    if not stamp:
+        return None
+    try:
+        text = str(stamp).replace("Z", "+00:00")
+        when = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - when).total_seconds()
+
+
+def _track_ok(pack: dict[str, Any], stage: str) -> bool:
+    track = ((pack.get("odds") or {}).get("tracks") or {}).get(stage) or {}
+    return bool(track.get("ok"))
+
+
+MAX_LINE_AGE_S = float(os.environ.get("PLATEWIRE_MAX_LINE_AGE_S", "180") or 180)
+
+
+def wait_for_fresh_line(
+    client: PlatewireClient,
+    game_id: str,
+    stage: str,
+    pack: dict[str, Any],
+) -> tuple[dict[str, Any], float | None, list[str]]:
+    """A verdict must not be written on a stale line.
+
+    The collector captures odds on its own cadence, so the pack handed to the
+    worker can be hours old — that is how a stake was sent at 2.42 while the
+    market already stood at 2.40. Refresh, wait, and re-read: the age of the line
+    the verdict actually used is returned and written to the ledger.
+    """
+    notes: list[str] = []
+    age = _odds_age_s(pack, stage)
+    if age is not None and age <= MAX_LINE_AGE_S and _track_ok(pack, stage):
+        return pack, age, notes
+
+    for attempt in range(3):
+        post(
+            client,
+            f"/games/{game_id}/odds/f5",
+            {"require_markets": False, "force": True, "stage": stage},
+        )
+        notes.append(f"refresh_odds:{attempt + 1}")
+        time.sleep(2)
+        fresh = client.pack(game_id)
+        age = _odds_age_s(fresh, stage)
+        if age is not None and age <= MAX_LINE_AGE_S and _track_ok(fresh, stage):
+            return fresh, age, notes
+
+    return pack, _odds_age_s(pack, stage), notes
 
 
 def analyze(game_id: str, stage: str, formula: dict[str, Any]) -> dict[str, Any]:
@@ -255,6 +314,13 @@ def run(game_id: str, reason: str, stage: str) -> dict[str, Any]:
         pack = client.pack(game_id)
         missing = gaps_for(pack, stage)
 
+    # The verdict is only as good as the line under it. Re-read before deciding.
+    if "odds" not in missing:
+        pack, line_age, waited = wait_for_fresh_line(client, game_id, stage, pack)
+        repairs.extend(waited)
+    else:
+        line_age = None
+
     game = pack.get("game") or {}
     home = ((game.get("home_team") or {}).get("abbreviation")) or "HOME"
     away = ((game.get("away_team") or {}).get("abbreviation")) or "AWAY"
@@ -268,6 +334,8 @@ def run(game_id: str, reason: str, stage: str) -> dict[str, Any]:
         "repairs": repairs,
         "bet": None,
         "pass_reason": None,
+        "line_age_s": round(line_age, 1) if isinstance(line_age, (int, float)) else None,
+        "line_fresh": bool(isinstance(line_age, (int, float)) and line_age <= MAX_LINE_AGE_S),
     }
     run_id = begin_run(
         client,

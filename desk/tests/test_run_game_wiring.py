@@ -62,6 +62,8 @@ ANALYSIS = {
 class FakeClient:
     def __init__(self, *_, **__):
         self.pack_calls = 0
+        self.base = "http://127.0.0.1:8000/api/v1"
+        self.token = "tok"
 
     def pack(self, _game_id):
         self.pack_calls += 1
@@ -78,6 +80,9 @@ def _run_once(pack_payload, captured):
     FakeClient.pack_payload = pack_payload
     run_game.PlatewireClient = FakeClient
     run_game.repair = lambda *a, **k: []  # no collector repairs in the test
+    # A fresh line is served, so the freshness gate is a no-op here — the pass
+    # reason is what this test is about.
+    run_game.wait_for_fresh_line = lambda client, game_id, stage, pack: (pack, 5.0, [])
     run_game.analyze = lambda *a, **k: {"analysis": ANALYSIS}
     run_game.begin_run = lambda *a, **k: None
     run_game.end_run = lambda *a, **k: None
