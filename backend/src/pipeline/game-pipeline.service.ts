@@ -8,6 +8,7 @@ import { OddsService } from '../odds/odds.service.js';
 import { GamesService } from '../games/games.service.js';
 import { GamesSyncService } from '../games/games-sync.service.js';
 import { OfficeDeskService } from '../office/office-desk.service.js';
+import { isActableGame } from '../office/actable-game.js';
 import { OfficeEventsService } from '../office/office-events.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { WeatherSyncService } from '../weather/weather-sync.service.js';
@@ -480,6 +481,14 @@ export class GamePipelineService {
     }
   }
 
+  /**
+   * A game the office must never act on — a synthetic one built by a rehearsal.
+   * The check lives in office/actable-game.ts so the universe and this gate agree.
+   */
+  private isActableGame(game: { mlbGamePk: number; statusDetail?: string | null }): boolean {
+    return isActableGame(game);
+  }
+
   private async universeGameIds(reason: PipelineReason): Promise<string[]> {
     const now = Date.now();
 
@@ -499,6 +508,7 @@ export class GamePipelineService {
       });
       return games
         .filter((g) => {
+          if (!this.isActableGame(g)) return false;
           if (!inPrematchWindow(g.gameDateUtc)) return false;
           const due = stagesNeedingFreshCapture({
             status: g.status,
@@ -526,12 +536,13 @@ export class GamePipelineService {
         },
       });
       return games
-        .filter((g) =>
-          needsStageWatch({
+        .filter((g) => {
+          if (!this.isActableGame(g)) return false;
+          return needsStageWatch({
             status: g.status,
             snapshots: g.f5OddsSnapshots,
-          }),
-        )
+          });
+        })
         .map((g) => g.id);
     }
 

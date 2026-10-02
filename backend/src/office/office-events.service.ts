@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { stageForGame } from '../odds/f5-scope.js';
+import { isActableGame } from './actable-game.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { inPrematchWindow } from '../pipeline/stage-needs.js';
 import { decideSettlement, pendingFinalKey } from './office-settlement.js';
@@ -42,6 +43,14 @@ export class OfficeEventsService {
       },
     });
     if (!game) return;
+    if (!isActableGame(game)) {
+      // One gate at the point of decision: a synthetic game built by a rehearsal
+      // must never reach the group, whatever path called us.
+      this.logger.warn(
+        `office event skipped for non-actable game pk=${game.mlbGamePk} (${game.statusDetail ?? ''})`,
+      );
+      return;
+    }
 
     const stage = stageForGame(game.status, game.inning);
     const lineupKey = [
