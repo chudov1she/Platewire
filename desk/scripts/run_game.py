@@ -142,7 +142,19 @@ def analyze(game_id: str, stage: str, formula: dict[str, Any]) -> dict[str, Any]
 
 
 def f5_runs(mlb_game_pk: int) -> dict[str, int] | None:
-    """Sum the first five innings from the MLB linescore. None until all five are played."""
+    """Sum the first five innings from the MLB linescore. None until all five are played.
+
+    PLATEWIRE_F5_SCORE="home:away" overrides the fetch — used by rehearsal.py to
+    drive a synthetic game through settlement without a real MLB linescore.
+    """
+    override = (os.environ.get("PLATEWIRE_F5_SCORE") or "").strip()
+    if override:
+        parts = override.split(":")
+        if len(parts) == 2:
+            try:
+                return {"home": int(parts[0]), "away": int(parts[1])}
+            except ValueError:
+                pass
     url = f"https://statsapi.mlb.com/api/v1.1/game/{mlb_game_pk}/feed/live"
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=20) as resp:

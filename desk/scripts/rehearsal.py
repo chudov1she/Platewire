@@ -53,8 +53,11 @@ def api(method: str, path: str, body=None, token=None):
     return json.loads(raw) if raw else None
 
 
-def run(cmd: list[str]) -> tuple[int, str]:
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ), timeout=900)
+def run(cmd: list[str], env_extra: dict[str, str] | None = None) -> tuple[int, str]:
+    env = dict(os.environ)
+    if env_extra:
+        env.update(env_extra)
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=900)
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
@@ -154,8 +157,8 @@ def main() -> int:
 
     stages = [
         ("prematch", "PREVIEW", 0, "top", 0, 0),
-        ("inn1", "LIVE", 1, "top", 0, 0),
-        ("inn2", "LIVE", 3, "top", 3, 0),
+        ("inn1", "LIVE", 2, "top", 0, 0),
+        ("inn2", "LIVE", 4, "top", 3, 0),
     ]
     for stage, status, inning, half, home, away in stages:
         step(f"СТАДИЯ {stage.upper()}  (status={status} inning={inning} score {away}:{home})")
@@ -170,9 +173,12 @@ def main() -> int:
 
     step("ИТОГ: СЧЁТ ПОСЛЕ 5 ИННИНГОВ + РАСЧЁТ")
     restamp(gid, args.source_pk, "inn2")
-    live(gid, "FINAL", 5, "bottom", 4, 1)
-    rc, out = run([sys.executable, str(RUN_GAME), "--game-id", gid, "--reason", "final", "--stage", "inn2"])
-    print(f"--- run_game rc={rc} ---")
+    live(gid, "FINAL", 6, "top", args.f5_home, args.f5_away)
+    rc, out = run(
+        [sys.executable, str(RUN_GAME), "--game-id", gid, "--reason", "final", "--stage", "inn2"],
+        env_extra={"PLATEWIRE_F5_SCORE": f"{args.f5_home}:{args.f5_away}"},
+    )
+    print(f"--- run_game rc={rc} (F5 {args.f5_away}:{args.f5_home}) ---")
     print(out[-2600:])
 
     step("ОТЧЁТ ДНЯ (комментарий ИИ)")

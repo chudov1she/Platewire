@@ -112,6 +112,9 @@ def _hermes_env() -> dict[str, str]:
 
 
 def _telegram_chat() -> str:
+    override = (os.environ.get("PLATEWIRE_TELEGRAM_CHAT") or "").strip()
+    if override:
+        return override
     data = _read_json(TELEGRAM_PATH, {})
     return str(data.get("chat_id") or "").strip()
 
