@@ -256,6 +256,16 @@ export class ContextService {
     const summary = (snapshot?.summaryJson ??
       null) as SavantPreviewSummary | null;
 
+    // The showcase starter must resolve exactly like the one the maths reads.
+    const gameRow = await this.prisma.game.findUnique({
+      where: { id: gameId },
+      select: { homeProbableMlbId: true, awayProbableMlbId: true },
+    });
+    const gameProbable = {
+      home: gameRow?.homeProbableMlbId ?? null,
+      away: gameRow?.awayProbableMlbId ?? null,
+    };
+
     const lineupRows = await this.prisma.gameLineupPlayer.findMany({
       where: { gameId },
       orderBy: [{ side: 'asc' }, { battingOrder: 'asc' }],
@@ -304,7 +314,22 @@ export class ContextService {
               : null,
         }));
 
-      const savantSp = summary?.[side]?.pitchers?.[0] ?? null;
+      // The showcase must name the same pitcher the maths uses. pitchers[0] is
+      // often a no-stats call-up, so the pack showed Dodd/Luzardo while the
+      // formula read Kerr/Nola off the MLB probable.
+      const probableId =
+        side === 'home' ? gameProbable.home : gameProbable.away;
+      const expectedId = resolveStartingPitcherId(
+        probableId,
+        summary?.[side]?.pitchers,
+      );
+      const savantList = summary?.[side]?.pitchers ?? [];
+      const savantSp =
+        (expectedId != null
+          ? savantList.find((p) => p.mlb_player_id === expectedId)
+          : null) ??
+        savantList[0] ??
+        null;
       const starter = savantSp
         ? {
             mlb_player_id: savantSp.mlb_player_id,

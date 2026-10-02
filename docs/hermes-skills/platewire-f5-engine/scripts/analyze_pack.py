@@ -1132,7 +1132,12 @@ def _starter_name(player: dict[str, Any] | None) -> str:
 
 
 def verify_starting_pitchers(pack: dict[str, Any]) -> dict[str, Any]:
-    """v43: compare pack starters with current game status, return warnings and allow override."""
+    """v43: compare pack starters with current game status, return warnings and allow override.
+
+    A comparison needs two sides. When the game carries no starter names the check
+    used to return verified=True having compared nothing — the caller read that as
+    'starters confirmed'. It now says so plainly instead.
+    """
     game = pack.get("game") or {}
     pack_home = _starter_name((pack.get("home") or {}).get("starter"))
     pack_away = _starter_name((pack.get("away") or {}).get("starter"))
@@ -1158,8 +1163,25 @@ def verify_starting_pitchers(pack: dict[str, Any]) -> dict[str, Any]:
     check("home", pack_home, status_home)
     check("away", pack_away, status_away)
 
+    compared = sum(1 for pair in ((pack_home, status_home), (pack_away, status_away)) if all(pair))
+    if compared == 0:
+        # Nothing to compare against: silence is not a pass.
+        return {
+            "verified": False,
+            "reason": "no_live_starter_data",
+            "warnings": warnings,
+            "mismatches": mismatches,
+            "pack_home_starter": pack_home,
+            "pack_away_starter": pack_away,
+            "live_home_starter": status_home,
+            "live_away_starter": status_away,
+            "override_allowed": True,
+        }
+
     return {
         "verified": len(mismatches) == 0,
+        "reason": None if not mismatches else "starter_mismatch",
+        "compared": compared,
         "warnings": warnings,
         "mismatches": mismatches,
         "pack_home_starter": pack_home,
