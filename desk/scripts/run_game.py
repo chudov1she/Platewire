@@ -206,6 +206,18 @@ def analyze(game_id: str, stage: str, formula: dict[str, Any]) -> dict[str, Any]
         timeout=120,
         check=False,
     )
+    if proc.returncode == 3:
+        # The engine refuses to price a game whose starting pitchers do not match.
+        # That is a decision, not a crash: keep the check so the desk can report it.
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            payload = {}
+        return {
+            "analysis": {},
+            "sp_check": payload.get("sp_check"),
+            "engine_error": payload.get("error") or "starting pitcher mismatch",
+        }
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "analyze_pack failed")
     return json.loads(proc.stdout)
@@ -370,6 +382,10 @@ def run(game_id: str, reason: str, stage: str) -> dict[str, Any]:
         analysis = (result.get("analysis") or {}) if result else {}
         bets = analysis.get("value_bets") or []
         card["formula_version"] = analysis.get("formula_version") or formula.get("version")
+        if isinstance(result.get("sp_check"), dict):
+            card["sp_check"] = result["sp_check"]
+        if result.get("engine_error"):
+            card["pass_reason"] = f"sp_mismatch: {result['engine_error']}"
         if bets:
             card["bet"] = bets[0]
             card["read"] = model_read(analysis, bets[0])
