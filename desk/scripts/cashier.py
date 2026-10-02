@@ -810,9 +810,6 @@ def _settle_locked(budget: dict[str, Any], card: dict[str, Any]) -> dict[str, An
             "bank_units": budget["bank_units"],
             "day_pnl": budget["day_pnl"],
         }
-        append_ledger(row)
-        graded.append(row)
-        save_budget(budget)
         why = ""
         try:
             from explain import explain_result
@@ -821,6 +818,9 @@ def _settle_locked(budget: dict[str, Any], card: dict[str, Any]) -> dict[str, An
         except Exception:
             why = ""
         row["why_result"] = why or None
+        append_ledger(row)
+        graded.append(row)
+        save_budget(budget)
         try:
             send_telegram(_settle_alert(row, why))
         except Exception:
