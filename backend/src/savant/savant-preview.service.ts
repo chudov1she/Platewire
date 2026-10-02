@@ -97,6 +97,30 @@ export class SavantPreviewService {
 
     for (const side of ['home', 'away'] as const) {
       for (const row of summary[side].lineup) {
+        // The Savant board can list two players on the same batting order (a
+        // pinch-hitter next to the starter) — the DB is unique on
+        // (gameId, side, battingOrder), so a duplicate used to abort the whole
+        // write and leave the lineup truncated at the last clean row.
+        // The first row on a shared order wins: it is the one the board lists as
+        // the starter's slot.
+        const taken = await this.prisma.gameLineupPlayer.findUnique({
+          where: {
+            gameId_side_battingOrder: {
+              gameId,
+              side,
+              battingOrder: row.batting_order,
+            },
+          },
+          select: { id: true },
+        });
+        if (taken) {
+          this.logger.warn(
+            `lineup ${gameId} ${side}: batting order ${row.batting_order} already taken, ` +
+              `skipping ${row.full_name ?? 'unknown'}`,
+          );
+          continue;
+        }
+
         let playerId: string | null = null;
         if (row.mlb_player_id !== null) {
           const player = await this.prisma.player.upsert({
