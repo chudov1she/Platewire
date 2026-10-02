@@ -215,6 +215,32 @@ def settle(game_id: str, reason: str) -> dict[str, Any]:
     return posted
 
 
+def _default_inputs(pack: dict[str, Any]) -> list[str]:
+    """Inputs the formula had to fill with a league average instead of a real read."""
+    sources = ((pack.get("features") or {}).get("input_sources") or {})
+    out: list[str] = []
+    for key, value in sources.items():
+        if not isinstance(value, dict):
+            continue
+        if value.get("source") == "default" and value.get("ready") is False:
+            out.append(key)
+    return sorted(out)
+
+
+def pass_reason(pack: dict[str, Any], analysis: dict[str, Any]) -> str:
+    """Why there is no bet. `not_ready` means there was nothing to read, not that
+    the formula looked and found no edge — the two must not share a reason."""
+    if not analysis.get("markets_used"):
+        return "no_markets"
+    defaults = _default_inputs(pack)
+    if "home_ops" in defaults or "away_ops" in defaults:
+        # Offense strength is the core input: on league averages there is no read.
+        return "not_ready"
+    if len(defaults) >= 3:
+        return "not_ready"
+    return "no_value"
+
+
 def run(game_id: str, reason: str, stage: str) -> dict[str, Any]:
     if reason in {"final", "f5_settled"}:
         return settle(game_id, reason)
@@ -269,7 +295,7 @@ def run(game_id: str, reason: str, stage: str) -> dict[str, Any]:
             card["read"] = model_read(analysis, bets[0])
             card["why"] = explain_bet(card, bets[0], analysis)
         elif not card["pass_reason"]:
-            card["pass_reason"] = "no_value" if analysis.get("markets_used") else "no_markets"
+            card["pass_reason"] = pass_reason(pack, analysis)
         if not card["bet"]:
             card["pass_why"] = explain_pass(card, analysis, str(card["pass_reason"]))
     posted = post_card(card)
