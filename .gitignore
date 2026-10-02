@@ -7,6 +7,8 @@
 
 # Office runtime: ledger, live budget, telegram target
 desk/runtime/
+desk/runtime-rehearsal/*
+!desk/runtime-rehearsal/README.md
 desk/telegram.json
 
 # Scratch

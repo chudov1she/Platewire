@@ -28,6 +28,7 @@ DESK = Path("/opt/platewire/desk")
 RUN_GAME = DESK / "scripts" / "run_game.py"
 BANK = DESK / "scripts" / "bank.py"
 RUNTIME = Path(os.environ.get("PLATEWIRE_RUNTIME", str(DESK / "runtime")))
+REHEARSAL_RUNTIME = DESK / "runtime-rehearsal"
 FAKE_PK = 990001
 
 
@@ -54,7 +55,23 @@ def api(method: str, path: str, body=None, token=None):
 
 
 def run(cmd: list[str], env_extra: dict[str, str] | None = None) -> tuple[int, str]:
+    """Run a desk script against a separate runtime: the rehearsal must never
+    touch the live ledger or bank."""
     env = dict(os.environ)
+    REHEARSAL_RUNTIME.mkdir(parents=True, exist_ok=True)
+    env["PLATEWIRE_RUNTIME"] = str(REHEARSAL_RUNTIME)
+    if not (REHEARSAL_RUNTIME / "budget.json").exists():
+        seed = RUNTIME / "budget.json"
+        if seed.exists():
+            REHEARSAL_RUNTIME.joinpath("budget.json").write_text(
+                seed.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+        else:
+            REHEARSAL_RUNTIME.joinpath("budget.json").write_text(
+                json.dumps({"bank_units": 1000, "max_per_game": 10, "max_open_units": 60, "unit": 10,
+                            "day": None, "day_pnl": 0, "open": []}, indent=2),
+                encoding="utf-8",
+            )
     if env_extra:
         env.update(env_extra)
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=900)
@@ -187,10 +204,10 @@ def main() -> int:
     step("ОТЧЁТ ДНЯ (комментарий ИИ)")
     print(run([sys.executable, str(BANK), "report"])[1][-2000:])
 
-    step("ЛЕДЖЕР: последние записи по этой игре")
-    lines = [json.loads(l) for l in (RUNTIME / "ledger.jsonl").read_text(encoding="utf-8-sig").splitlines() if l.strip()]
+    step("ЛЕДЖЕР ОБКАТКИ (отдельный runtime, реальный не тронут)")
+    lines = [json.loads(l) for l in (REHEARSAL_RUNTIME / "ledger.jsonl").read_text(encoding="utf-8-sig").splitlines() if l.strip()]
     for row in [r for r in lines if r.get("game_id") == gid]:
-        print(json.dumps(row, ensure_ascii=False)[:900])
+        print(json.dumps(row, ensure_ascii=False)[:700])
 
     print(f"\nГотово. Убери псевдо-игру: python3 {__file__} --cleanup")
     return 0
