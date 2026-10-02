@@ -25,6 +25,8 @@ def _hermes_env_path() -> Path:
 
 HERMES_ENV = _hermes_env_path()
 MODEL = os.environ.get("PLATEWIRE_EXPLAIN_MODEL", "").strip() or "deepseek-v4.1-flash"
+# Hermes keeps the key in .env but not the address; Ollama Cloud is the default.
+DEFAULT_BASE = "https://ollama.com"
 
 
 def _env() -> dict[str, str]:
@@ -66,14 +68,16 @@ def _facts(card: dict[str, Any], bet: dict[str, Any], analysis: dict[str, Any]) 
     }
 
 
-def _chat(system: str, user: str) -> str | None:
+def _chat(system: str, user: str, model: str | None = None) -> str | None:
     env = _env()
-    base = (env.get("OLLAMA_BASE_URL") or "").rstrip("/")
-    key = env.get("OLLAMA_API_KEY") or ""
+    base = (env.get("OLLAMA_BASE_URL") or os.environ.get("OLLAMA_BASE_URL") or DEFAULT_BASE).rstrip("/")
+    key = env.get("OLLAMA_API_KEY") or os.environ.get("OLLAMA_API_KEY") or ""
     if not base or not key:
         return None
+    if not base.endswith("/v1"):
+        base = f"{base}/v1"
     payload = {
-        "model": MODEL,
+        "model": model or MODEL,
         "temperature": 0.3,
         "messages": [
             {"role": "system", "content": system},
@@ -109,6 +113,64 @@ def explain_bet(card: dict[str, Any], bet: dict[str, Any], analysis: dict[str, A
         "Без списков и без таблицы."
     )
     return _chat(system, json.dumps(_facts(card, bet, analysis), ensure_ascii=False))
+
+
+def explain_pass(card: dict[str, Any], analysis: dict[str, Any], reason: str) -> str | None:
+    """Why the formula did not take this game. Read by the office, never sent to the group."""
+    facts = {
+        "matchup": card.get("matchup"),
+        "stage": card.get("stage"),
+        "formula": analysis.get("formula_version") or card.get("formula_version"),
+        "reason": reason,
+        "gaps": card.get("gaps") or [],
+        "threshold_pct": analysis.get("value_threshold_pct"),
+        "expected_total": _round(analysis.get("expected_total"), 2),
+        "lambda_home": _round(analysis.get("lambda_home"), 3),
+        "lambda_away": _round(analysis.get("lambda_away"), 3),
+        "markets_used": analysis.get("markets_used"),
+        "best_value_pct": _round(analysis.get("best_value_pct"), 2),
+        "data_problems": analysis.get("data_problems") or [],
+        "notes": analysis.get("notes") or [],
+    }
+    system = (
+        "Ты аналитик офиса Platewire. Формула не взяла эту игру. Объясни по-русски "
+        "в 2–3 предложениях, почему ставки нет: чего не хватило — данных, рынка или перевеса. "
+        "Если данных не хватало, скажи каких. Если рынок был, но перевес не дотянул до порога, "
+        "скажи это прямо и назови цифры из данных. Сторону называй по-русски. "
+        "Не используй слова lambda, value, ROI, over, under и английские имена полей. "
+        "Не выдумывай травмы, новости и составы. Без списков и без таблицы."
+    )
+    return _chat(system, json.dumps(facts, ensure_ascii=False))
+
+
+def explain_result(row: dict[str, Any], read: dict[str, Any] | None) -> str | None:
+    """Why an accepted stake won or lost. Goes to the group with the result card."""
+    f5 = row.get("f5") if isinstance(row.get("f5"), dict) else {}
+    facts = {
+        "matchup": row.get("matchup"),
+        "result": row.get("result"),
+        "market": row.get("market") or (read or {}).get("market"),
+        "side": row.get("side") or (read or {}).get("side"),
+        "line": row.get("line") if row.get("line") is not None else (read or {}).get("line"),
+        "decimal_odds": row.get("decimal_odds"),
+        "f5_score": f5 or None,
+        "forecast_total": (read or {}).get("expected_total"),
+        "forecast_home": (read or {}).get("expected_home"),
+        "forecast_away": (read or {}).get("expected_away"),
+        "threshold_pct": (read or {}).get("value_threshold"),
+        "data_problems": (read or {}).get("data_problems") or [],
+        "snapshot": bool(read),
+    }
+    system = (
+        "Ты аналитик офиса Platewire. Ставка рассчитана. Объясни по-русски в 2–3 предложениях, "
+        "почему она зашла или не зашла: что показал прогноз и что случилось на поле. "
+        "Сторону называй по-русски: победа хозяев, победа гостей, больше, меньше. "
+        "Если прогноз смотрел верно, а результат совпал — скажи это прямо. "
+        "Если прогноз ошибся, назови причину: тонкий запас, дыры в данных или игра ушла в другую сторону. "
+        "Не используй слова lambda, value, ROI и английские имена полей. "
+        "Не выдумывай травмы, новости и составы. Без списков и без таблицы."
+    )
+    return _chat(system, json.dumps(facts, ensure_ascii=False))
 
 
 def _round(value: Any, digits: int) -> float | None:

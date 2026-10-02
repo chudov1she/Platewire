@@ -20,7 +20,7 @@ sys.path.insert(0, str(ENGINE))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from cashier import post_card  # noqa: E402
-from explain import explain_bet, model_read  # noqa: E402
+from explain import explain_bet, explain_pass, model_read  # noqa: E402
 from platewire_client import PlatewireClient  # noqa: E402
 
 
@@ -258,6 +258,8 @@ def run(game_id: str, reason: str, stage: str) -> dict[str, Any]:
             card["why"] = explain_bet(card, bets[0], analysis)
         elif not card["pass_reason"]:
             card["pass_reason"] = "no_value" if analysis.get("markets_used") else "no_markets"
+        if not card["bet"]:
+            card["pass_why"] = explain_pass(card, analysis, str(card["pass_reason"]))
     posted = post_card(card)
     end_run(
         client,

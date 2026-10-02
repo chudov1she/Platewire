@@ -709,6 +709,7 @@ def post_card(card: dict[str, Any]) -> dict[str, Any]:
             "bank_units": budget.get("bank_units"),
             "gaps": card.get("gaps") or [],
             "why": card.get("why"),
+            "pass_why": card.get("pass_why"),
             "read": card.get("read") if isinstance(card.get("read"), dict) else None,
         }
         append_ledger(row)
@@ -761,6 +762,16 @@ def grade_position(item: dict[str, Any], home: int, away: int) -> dict[str, Any]
     return push()
 
 
+def _read_for_game(game_id: Any) -> dict[str, Any] | None:
+    """The model snapshot of the accepted stake, used to explain the outcome."""
+    for row in reversed(load_ledger()):
+        if row.get("game_id") != game_id:
+            continue
+        if row.get("kind") == "card" and row.get("decision") == "bet" and isinstance(row.get("read"), dict):
+            return row["read"]
+    return None
+
+
 def _settle_locked(budget: dict[str, Any], card: dict[str, Any]) -> dict[str, Any]:
     game_id = card.get("game_id")
     open_items = [item for item in budget.get("open") or [] if item.get("game_id") == game_id]
@@ -799,8 +810,16 @@ def _settle_locked(budget: dict[str, Any], card: dict[str, Any]) -> dict[str, An
         append_ledger(row)
         graded.append(row)
         save_budget(budget)
+        why = ""
         try:
-            send_telegram(_settle_alert(row))
+            from explain import explain_result
+
+            why = explain_result(row, _read_for_game(game_id)) or ""
+        except Exception:
+            why = ""
+        row["why_result"] = why or None
+        try:
+            send_telegram(_settle_alert(row, why))
         except Exception:
             pass
     if graded:
@@ -818,7 +837,7 @@ def _settle_locked(budget: dict[str, Any], card: dict[str, Any]) -> dict[str, An
     return row
 
 
-def _settle_alert(row: dict[str, Any]) -> dict[str, Any]:
+def _settle_alert(row: dict[str, Any], why: str = "") -> dict[str, Any]:
     titles = {"win": "Выигрыш", "loss": "Проигрыш", "push": "Возврат", "void": "Возврат"}
     title = titles.get(str(row.get("result")), "Расчёт")
     f5 = row.get("f5") or {}
@@ -851,7 +870,12 @@ def _settle_alert(row: dict[str, Any]) -> dict[str, Any]:
     ]
     if note:
         blocks.append({"type": "paragraph", "text": note})
+    if why:
+        blocks.append({"type": "heading", "text": "Почему так", "size": 5})
+        blocks.append({"type": "paragraph", "text": why})
     plain = f"{title} {row.get('matchup')} {score} выплата {row.get('payout')} банк {row.get('bank_units')}"
+    if why:
+        plain = f"{plain}\n\n{why}"
     return {"plain": plain, "blocks": blocks}
 
 
