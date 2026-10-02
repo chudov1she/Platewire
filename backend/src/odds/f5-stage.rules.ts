@@ -22,7 +22,10 @@ export function decideF5StageWrite(opts: {
   void opts.gameStatus;
   void opts.completedInnings;
 
-  if (!opts.extractOk && !opts.force) {
+  // `force` only overrides the lock, never the extract. An empty extract stays
+  // out of the snapshot table: the stage track must be the last GOOD read, and
+  // a forced miss would otherwise become it.
+  if (!opts.extractOk) {
     return { action: 'skip', reason: 'extract_incomplete' };
   }
 

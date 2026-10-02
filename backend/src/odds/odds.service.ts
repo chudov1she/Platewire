@@ -213,32 +213,9 @@ export class OddsService {
     });
 
     if (decision.action === 'skip') {
-      // Pipeline: record failed attempt so we backoff 90s then retry (guarantee loop).
-      if (
-        opts.pipelineCapture &&
-        decision.reason === 'extract_incomplete'
-      ) {
-        const failSnap = await this.prisma.f5OddsSnapshot.create({
-          data: {
-            gameId,
-            stage,
-            locked: false,
-            winlineEventId: full.winline_event_id,
-            flipped,
-            ...this.bookColumns(extracted, book),
-            ok: false,
-            fetchedAt,
-          },
-        });
-        return {
-          ...this.serializeF5Snap(failSnap, game.mlbGamePk, {
-            skipped: true,
-            skip_reason: decision.reason,
-          }),
-          fresh: true,
-        };
-      }
-
+      // No snapshot row for an empty extract: the stage track must stay the last
+      // good read. The pipeline retries on its own cadence, so a failed attempt
+      // needs no row to come back to.
       if (existing) {
         const payload = this.serializeF5Snap(existing, game.mlbGamePk, {
           skipped: true,
@@ -290,6 +267,27 @@ export class OddsService {
       return emptyPayload;
     }
 
+    // Two scrapes can land inside the same second when stages overlap; the books
+    // move on their own cadence, so a second row would be a duplicate, not news.
+    const DUPLICATE_WINDOW_MS = 2000;
+    const recent = await this.prisma.f5OddsSnapshot.findFirst({
+      where: { gameId, stage, ok: true },
+      orderBy: { fetchedAt: 'desc' },
+    });
+    if (
+      recent &&
+      fetchedAt.getTime() - recent.fetchedAt.getTime() < DUPLICATE_WINDOW_MS &&
+      this.sameBook(recent, extracted)
+    ) {
+      return {
+        ...this.serializeF5Snap(recent, game.mlbGamePk, {
+          skipped: true,
+          skip_reason: 'duplicate_within_2s',
+        }),
+        fresh: false,
+      };
+    }
+
     const snap = await this.prisma.f5OddsSnapshot.create({
       data: {
         gameId,
@@ -302,7 +300,6 @@ export class OddsService {
         fetchedAt,
       },
     });
-
     const payload = {
       ...this.serializeF5Snap(snap, game.mlbGamePk),
       fresh: true,
@@ -370,6 +367,9 @@ export class OddsService {
 
     const latestByStage = new Map<string, (typeof rows)[number]>();
     for (const row of [...rows].reverse()) {
+      // A stage track is the last GOOD read. An ok=false row carries empty
+      // markets, so letting it win leaves the pack with no line at all.
+      if (!row.ok) continue;
       latestByStage.set(row.stage, row);
     }
 
@@ -405,9 +405,22 @@ export class OddsService {
     };
   }
 
+  /** Same book as the previous snapshot: used only to reject a duplicate row. */
+  private sameBook(
+    row: { moneylineJson: unknown; mainTotalJson: unknown },
+    extracted: ReturnType<typeof extractF5Markets>,
+  ): boolean {
+    return (
+      JSON.stringify(row.moneylineJson ?? null) ===
+        JSON.stringify(extracted.moneyline ?? null) &&
+      JSON.stringify(row.mainTotalJson ?? null) ===
+        JSON.stringify(extracted.main_total ?? null)
+    );
+  }
+
   private latestSnapshot(gameId: string, stage: string) {
     return this.prisma.f5OddsSnapshot.findFirst({
-      where: { gameId, stage },
+      where: { gameId, stage, ok: true },
       orderBy: { fetchedAt: 'desc' },
     });
   }

@@ -99,4 +99,33 @@ describe('decideF5StageWrite', () => {
     });
     assert.equal(d.action, 'skip');
   });
+
+  // Defect #10: force used to override the extract, so an empty read became the
+  // stage track and the pack lost its line.
+  it('skips incomplete extract EVEN with force', () => {
+    const d = decideF5StageWrite({
+      stage: 'inn2',
+      existingLocked: false,
+      extractOk: false,
+      force: true,
+      gameStatus: 'LIVE',
+      completedInnings: 2,
+    });
+    assert.equal(d.action, 'skip');
+    if (d.action === 'skip') {
+      assert.equal(d.reason, 'extract_incomplete');
+    }
+  });
+
+  it('still writes a good extract with force', () => {
+    const d = decideF5StageWrite({
+      stage: 'inn2',
+      existingLocked: true,
+      extractOk: true,
+      force: true,
+      gameStatus: 'LIVE',
+      completedInnings: 2,
+    });
+    assert.equal(d.action, 'write');
+  });
 });
