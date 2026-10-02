@@ -139,6 +139,9 @@ def main() -> int:
     parser.add_argument("--source-pk", type=int, default=849844)
     parser.add_argument("--cleanup", action="store_true")
     parser.add_argument("--skip-explain", action="store_true", help="set PLATEWIRE_SKIP_TELEGRAM")
+    parser.add_argument("--f5-home", type=int, default=4, help="synthetic F5 home runs")
+    parser.add_argument("--f5-away", type=int, default=1, help="synthetic F5 away runs")
+    parser.add_argument("--chat", default="", help="Telegram chat id for the rehearsal cards")
     args = parser.parse_args()
 
     if args.cleanup:
