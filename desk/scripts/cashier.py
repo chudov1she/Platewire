@@ -647,6 +647,78 @@ def deposit(amount: float, note: str = "") -> dict[str, Any]:
         return row
 
 
+def _stage_rank(stage: Any) -> int:
+    return {"prematch": 0, "inn1": 1, "inn2": 2}.get(str(stage), -1)
+
+
+def _recalc_open(budget: dict[str, Any], card: dict[str, Any], bet: dict[str, Any]) -> dict[str, Any] | None:
+    """A staked position may be rewritten while its stage window is still open.
+
+    An F5 track is open only inside its own inning window: prematch until the 1st
+    inning ends, inn1 during the 2nd, inn2 from the 3rd through the end of F5.
+    Once the game moves past the window the row is frozen forever.
+
+    Returns the comparison to log, or None when there is nothing to rewrite.
+    """
+    tracked = next(
+        (item for item in budget.get("open") or [] if item.get("game_id") == card.get("game_id")),
+        None,
+    )
+    if not tracked:
+        return None
+
+    window = tracked.get("stage")
+    current = card.get("current_stage")
+    if current != window:
+        # Outside the window of the tracked stage: frozen, exactly as before.
+        return {
+            "window": window,
+            "current": current,
+            "rewritten": False,
+            "frozen": True,
+            "same_book": None,
+        }
+
+    same_book = (
+        tracked.get("market") == bet.get("market")
+        and tracked.get("side") == bet.get("side")
+        and tracked.get("line") == bet.get("line")
+        and float(tracked.get("decimal_odds") or 0) == float(bet.get("decimal_odds") or 0)
+    )
+    if same_book:
+        return {
+            "window": window,
+            "current": current,
+            "rewritten": False,
+            "frozen": False,
+            "same_book": True,
+        }
+
+    before = {
+        "side": tracked.get("side"),
+        "line": tracked.get("line"),
+        "decimal_odds": tracked.get("decimal_odds"),
+    }
+    tracked["market"] = bet.get("market")
+    tracked["side"] = bet.get("side")
+    tracked["line"] = bet.get("line")
+    tracked["decimal_odds"] = bet.get("decimal_odds")
+    tracked["recalc_at"] = _now()
+    return {
+        "window": window,
+        "current": current,
+        "rewritten": True,
+        "frozen": False,
+        "same_book": False,
+        "before": before,
+        "after": {
+            "side": bet.get("side"),
+            "line": bet.get("line"),
+            "decimal_odds": bet.get("decimal_odds"),
+        },
+    }
+
+
 def post_card(card: dict[str, Any]) -> dict[str, Any]:
     """Record a pseudo-bet. Send Telegram only when the bank accepts a stake."""
     with _Lock():
@@ -657,6 +729,7 @@ def post_card(card: dict[str, Any]) -> dict[str, Any]:
         telegram: dict[str, Any] = {"ok": False, "skipped": True, "reason": "pass"}
         decision = "pass"
         reason = card.get("pass_reason") or "no_value"
+        recalc: dict[str, Any] | None = None
 
         if card.get("reason") in {"final", "f5_settled"}:
             return _settle_locked(budget, card)
@@ -666,7 +739,23 @@ def post_card(card: dict[str, Any]) -> dict[str, Any]:
             room = float(budget["max_open_units"]) - _open_units(budget)
             already = any(item.get("game_id") == card.get("game_id") for item in budget["open"])
             if already:
-                reason = "already_open"
+                # A position may be rewritten while its stage window is open; a
+                # plain already_open left it frozen on a line that no longer exists.
+                recalc = _recalc_open(budget, card, bet)
+                if recalc and recalc.get("rewritten"):
+                    reason = "recalculated"
+                    decision = "bet"
+                    stake = float(
+                        next(
+                            item.get("stake") or 0
+                            for item in budget["open"]
+                            if item.get("game_id") == card.get("game_id")
+                        )
+                    )
+                    save_budget(budget)
+                    _touch_board(budget)
+                else:
+                    reason = "already_open"
             elif want > float(budget["bank_units"]):
                 reason = "bank_empty"
             elif want > room:
@@ -715,6 +804,7 @@ def post_card(card: dict[str, Any]) -> dict[str, Any]:
             "pass_why": card.get("pass_why"),
             "line_age_s": card.get("line_age_s"),
             "line_fresh": card.get("line_fresh"),
+            "recalc": recalc,
             "read": card.get("read") if isinstance(card.get("read"), dict) else None,
         }
         append_ledger(row)

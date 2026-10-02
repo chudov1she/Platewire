@@ -177,6 +177,17 @@ def wait_for_fresh_line(
     return pack, _odds_age_s(pack, stage), notes
 
 
+def _stage_for_game(game: dict[str, Any]) -> str:
+    """Mirror of stageForGame() in backend/src/odds/f5-scope.ts."""
+    inning = game.get("inning")
+    completed = max(0, int(inning) - 1) if isinstance(inning, int) else 0
+    if completed >= 2:
+        return "inn2"
+    if completed >= 1:
+        return "inn1"
+    return "prematch"
+
+
 def analyze(game_id: str, stage: str, formula: dict[str, Any]) -> dict[str, Any]:
     env = os.environ.copy()
     env["PLATEWIRE_FORMULA_VERSION"] = str(formula.get("version") or "v45.1")
@@ -328,6 +339,7 @@ def run(game_id: str, reason: str, stage: str) -> dict[str, Any]:
         "game_id": game.get("id") or game_id,
         "matchup": f"{away} @ {home}",
         "stage": stage,
+        "current_stage": _stage_for_game(game),
         "trigger": reason,
         "formula_version": formula.get("version"),
         "gaps": missing,
